@@ -1,3 +1,4 @@
+from functools import partial
 import jax
 import optax
 import tensorflow as tf
@@ -84,8 +85,8 @@ state = TrainState.create(
 )
 
 
-@jax.jit
-def train_step(state, batch):
+@partial(jax.jit, static_argnames=["sequence_length"])
+def train_step(state, batch, sequence_length):
     """Train for a single step."""
 
     def loss_fn(params):
@@ -112,15 +113,23 @@ checkpoint_manager = CheckpointManager(
 
 step = 0
 
-save_every = 50
+save_every = 100
 
 lengths = []
-for batch in data.as_numpy_iterator():
-    state, loss, tokens = train_step(state, batch)
-    step += 1
+for epoch in range(5):
+    total_loss = jnp.zeros((), dtype="float32")
+    total_tokens = jnp.zeros((), dtype="int32")
+    for batch in data.as_numpy_iterator():
+        state, loss, tokens = train_step(
+            state, batch, sequence_length=batch["inputs_ids"].shape[-1]
+        )
+        step += 1
+        total_loss += loss
+        total_tokens += tokens
 
-    if step % save_every == 0:
-        ckpt = {"model": state}
-        checkpoint_manager.save(step, ckpt)
+        if step % save_every == 0:
+            ckpt = {"model": state}
+            checkpoint_manager.save(step, ckpt)
 
-    print("step", step, "avg loss:", loss / tokens)
+            print("step", step, "avg loss:", loss / tokens)
+    print(f"epoch {epoch + 1} step {step} avg_loss {total_loss / total_tokens}")
