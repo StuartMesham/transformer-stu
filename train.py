@@ -1,7 +1,6 @@
 from functools import partial
 import jax
 import optax
-import tensorflow as tf
 import tensorflow_text as tf_text
 from clu import metrics
 from flax import struct
@@ -14,50 +13,8 @@ from orbax.checkpoint import (
     PyTreeCheckpointer,
 )
 
+from data_loading import get_positive_reframing_dataset
 from transformer import Transformer
-
-with open("outputs/m.model", "rb") as f:
-    tokenizer = tf_text.SentencepieceTokenizer(f.read(), add_eos=True)
-
-
-def tokenize_input_target_pair(input, target):
-    return tokenizer.tokenize(input), tokenizer.tokenize(target)
-
-
-def convert_to_prefix_lm_example(input, target):
-    return {
-        "inputs_ids": tf.concat((input, target[:-1]), axis=0),
-        "labels": tf.concat((tf.zeros_like(input)[:-1], target), axis=0),
-        "bidirectional_attention_mask": tf.concat(
-            (tf.ones_like(input), tf.zeros_like(target[:-1])), axis=0
-        ),
-    }
-
-
-data = (
-    tf.data.experimental.CsvDataset(
-        "data/train.csv",
-        record_defaults=["", ""],
-        select_cols=[0, 1],
-        header=True,
-    )
-    .map(tokenize_input_target_pair)
-    .map(convert_to_prefix_lm_example)
-)
-
-max_length = 170
-BATCH_SIZE = 32
-
-data = data.bucket_by_sequence_length(
-    element_length_func=lambda elem: tf.shape(elem["inputs_ids"])[0],
-    bucket_boundaries=[41, 61, 171],
-    pad_to_bucket_boundary=True,
-    drop_remainder=True,
-    bucket_batch_sizes=[BATCH_SIZE, BATCH_SIZE, BATCH_SIZE, BATCH_SIZE],
-)
-
-count = 0
-transformer = Transformer(max_length=max_length, vocab_size=tokenizer.vocab_size())
 
 
 @struct.dataclass
@@ -69,27 +26,43 @@ class TrainState(train_state.TrainState):
     metrics: Metrics
 
 
-# Create state
-batch = next(data.take(1).as_numpy_iterator())
-state = TrainState.create(
-    apply_fn=transformer.apply,
-    params=transformer.init(
-        random.PRNGKey(0),
-        {
-            k: jnp.zeros((BATCH_SIZE, max_length), dtype=int)
-            for k in ["inputs_ids", "bidirectional_attention_mask"]
-        },
-    )["params"],
-    tx=optax.adamw(learning_rate=0.001),
-    metrics=Metrics.empty(),
-)
+BATCH_SIZE = 32
+save_every = 100
+num_length_buckets = 5
 
 
-@partial(jax.jit, static_argnames=["sequence_length"])
-def train_step(state, batch, sequence_length):
-    """Train for a single step."""
+def main():
+    with open("outputs/m.model", "rb") as f:
+        tokenizer = tf_text.SentencepieceTokenizer(f.read(), add_eos=True)
 
-    def loss_fn(params):
+    train_dataset, bucket_boundaries = get_positive_reframing_dataset(
+        "data/train.csv", tokenizer, BATCH_SIZE, num_length_buckets=num_length_buckets
+    )
+
+    val_dataset, _ = get_positive_reframing_dataset(
+        "data/dev.csv", tokenizer, BATCH_SIZE, num_length_buckets=num_length_buckets
+    )
+
+    max_length = bucket_boundaries[-1] - 1
+
+    transformer = Transformer(max_length=max_length, vocab_size=tokenizer.vocab_size())
+
+    # Create state
+    batch = next(train_dataset.take(1).as_numpy_iterator())
+    state = TrainState.create(
+        apply_fn=transformer.apply,
+        params=transformer.init(
+            random.PRNGKey(0),
+            {
+                k: jnp.zeros((BATCH_SIZE, max_length), dtype=int)
+                for k in ["inputs_ids", "bidirectional_attention_mask"]
+            },
+        )["params"],
+        tx=optax.adamw(learning_rate=0.001),
+        metrics=Metrics.empty(),
+    )
+
+    def loss_fn(params, state, batch):
         mask = batch["labels"] != 0
         logits = state.apply_fn({"params": params}, batch)
         loss = optax.softmax_cross_entropy_with_integer_labels(
@@ -98,38 +71,61 @@ def train_step(state, batch, sequence_length):
         loss *= mask  # zero loss for padded tokens
         return loss.sum(), mask
 
-    value_and_grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
-    (loss, mask), grads = value_and_grad_fn(state.params)
-    state = state.apply_gradients(grads=grads)
-    return state, loss, mask.sum()
+    @partial(jax.jit, static_argnames=["sequence_length"])
+    def train_step(state, batch, sequence_length):
+        """Train for a single step."""
 
+        value_and_grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+        (loss, mask), grads = value_and_grad_fn(state.params, state, batch)
+        state = state.apply_gradients(grads=grads)
+        return state, loss, mask.sum()
 
-checkpoint_manager = CheckpointManager(
-    "model_saves",
-    PyTreeCheckpointer(),
-    CheckpointManagerOptions(max_to_keep=2, create=True),
-)
+    @partial(jax.jit, static_argnames=["sequence_length"])
+    def eval_step(state, batch, sequence_length):
+        """Train for a single step."""
 
+        loss, mask = loss_fn(state.params, state, batch)
+        return loss, mask.sum()
 
-step = 0
+    checkpoint_manager = CheckpointManager(
+        "model_saves",
+        PyTreeCheckpointer(),
+        CheckpointManagerOptions(max_to_keep=2, create=True),
+    )
 
-save_every = 100
+    step = 0
 
-lengths = []
-for epoch in range(5):
-    total_loss = jnp.zeros((), dtype="float32")
-    total_tokens = jnp.zeros((), dtype="int32")
-    for batch in data.as_numpy_iterator():
-        state, loss, tokens = train_step(
-            state, batch, sequence_length=batch["inputs_ids"].shape[-1]
+    lengths = []
+    for epoch in range(5):
+        total_loss = jnp.zeros((), dtype="float32")
+        total_tokens = jnp.zeros((), dtype="int32")
+        for batch in train_dataset.as_numpy_iterator():
+            state, loss, tokens = train_step(
+                state, batch, sequence_length=batch["inputs_ids"].shape[-1]
+            )
+            step += 1
+            total_loss += loss
+            total_tokens += tokens
+
+            if step % save_every == 0:
+                ckpt = {"model": state}
+                checkpoint_manager.save(step, ckpt)
+
+                print("step", step, "avg loss:", loss / tokens)
+        print(f"epoch {epoch + 1} step {step} avg_loss {total_loss / total_tokens}")
+
+        total_loss = jnp.zeros((), dtype="float32")
+        total_tokens = jnp.zeros((), dtype="int32")
+        for batch in val_dataset.as_numpy_iterator():
+            batch_loss, batch_tokens = eval_step(
+                state, batch, sequence_length=batch["inputs_ids"].shape[-1]
+            )
+            total_loss += batch_loss
+            total_tokens += batch_tokens
+        print(
+            f"validation epoch {epoch + 1} step {step} avg_loss {total_loss / total_tokens}"
         )
-        step += 1
-        total_loss += loss
-        total_tokens += tokens
 
-        if step % save_every == 0:
-            ckpt = {"model": state}
-            checkpoint_manager.save(step, ckpt)
 
-            print("step", step, "avg loss:", loss / tokens)
-    print(f"epoch {epoch + 1} step {step} avg_loss {total_loss / total_tokens}")
+if __name__ == "__main__":
+    main()
