@@ -3,3 +3,4 @@ flax
 tensorflow-datasets
 clu
 sentencepiece
+click

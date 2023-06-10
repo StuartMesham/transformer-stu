@@ -54,5 +54,5 @@ python train_tokenizer.py
 ### Train Prefix-LM
 
 ```bash
-python train.py
+python train.py --tokenizer_file outputs/m.model --train_data data/train.csv --val_data data/dev.csv
 ```

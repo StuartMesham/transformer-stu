@@ -45,12 +45,12 @@ class Transformer(nn.Module):
     vocab_size: int = 100
     emb_size: int = 64
 
-    hidden_dim: int = 128
+    mlp_hidden_dim: int = 128
     num_layers: int = 2
 
     pad_token_idx: int = 0
 
-    num_heads = 4
+    num_heads: int = 4
 
     @nn.compact
     def __call__(self, batch):
@@ -68,7 +68,7 @@ class Transformer(nn.Module):
         for _ in range(self.num_layers):
             emb += nn.SelfAttention(num_heads=self.num_heads)(emb, attention_mask)
             emb = nn.LayerNorm()(emb)
-            emb += MLP(self.hidden_dim, self.emb_size)(emb)
+            emb += MLP(self.mlp_hidden_dim, self.emb_size)(emb)
             emb = nn.LayerNorm()(emb)
         logits = nn.Dense(self.vocab_size)(emb)
 

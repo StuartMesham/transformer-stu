@@ -1,4 +1,5 @@
 from functools import partial
+import click
 import jax
 import optax
 import tensorflow_text as tf_text
@@ -26,39 +27,70 @@ class TrainState(train_state.TrainState):
     metrics: Metrics
 
 
-BATCH_SIZE = 32
-save_every = 100
-num_length_buckets = 5
-
-
-def main():
-    with open("outputs/m.model", "rb") as f:
+@click.command()
+@click.option("--tokenizer_file", required=True)
+@click.option("--train_data", required=True)
+@click.option("--val_data", required=True)
+@click.option("--model_save_dir", default="model_saves")
+@click.option("--batch_size", default=32)
+@click.option("--num_epochs", default=5)
+@click.option("--save_every", default=1)
+@click.option("--eval_every", default=1)
+@click.option("--num_length_buckets", default=5)
+@click.option("--learning_rate", default=0.001)
+@click.option("--emb_size", default=64)
+@click.option("--mlp_hidden_dim", default=128)
+@click.option("--num_layers", default=2)
+@click.option("--num_heads", default=4)
+def main(
+    tokenizer_file,
+    train_data,
+    val_data,
+    model_save_dir,
+    batch_size,
+    num_epochs,
+    save_every,
+    eval_every,
+    num_length_buckets,
+    learning_rate,
+    emb_size,
+    mlp_hidden_dim,
+    num_layers,
+    num_heads,
+):
+    with open(tokenizer_file, "rb") as f:
         tokenizer = tf_text.SentencepieceTokenizer(f.read(), add_eos=True)
 
     train_dataset, bucket_boundaries = get_positive_reframing_dataset(
-        "data/train.csv", tokenizer, BATCH_SIZE, num_length_buckets=num_length_buckets
+        train_data, tokenizer, batch_size, num_length_buckets=num_length_buckets
     )
 
     val_dataset, _ = get_positive_reframing_dataset(
-        "data/dev.csv", tokenizer, BATCH_SIZE, num_length_buckets=num_length_buckets
+        val_data, tokenizer, batch_size, num_length_buckets=num_length_buckets
     )
 
     max_length = bucket_boundaries[-1] - 1
 
-    transformer = Transformer(max_length=max_length, vocab_size=tokenizer.vocab_size())
+    transformer = Transformer(
+        max_length=max_length,
+        vocab_size=tokenizer.vocab_size(),
+        emb_size=emb_size,
+        mlp_hidden_dim=mlp_hidden_dim,
+        num_layers=num_layers,
+        num_heads=num_heads,
+    )
 
     # Create state
-    batch = next(train_dataset.take(1).as_numpy_iterator())
     state = TrainState.create(
         apply_fn=transformer.apply,
         params=transformer.init(
             random.PRNGKey(0),
             {
-                k: jnp.zeros((BATCH_SIZE, max_length), dtype=int)
+                k: jnp.zeros((batch_size, max_length), dtype=int)
                 for k in ["inputs_ids", "bidirectional_attention_mask"]
             },
         )["params"],
-        tx=optax.adamw(learning_rate=0.001),
+        tx=optax.adamw(learning_rate),
         metrics=Metrics.empty(),
     )
 
@@ -88,43 +120,44 @@ def main():
         return loss, mask.sum()
 
     checkpoint_manager = CheckpointManager(
-        "model_saves",
+        model_save_dir,
         PyTreeCheckpointer(),
         CheckpointManagerOptions(max_to_keep=2, create=True),
     )
 
-    step = 0
+    print("starting train loop")
 
-    lengths = []
-    for epoch in range(5):
+    steps = 0
+    for epoch in range(num_epochs):
         total_loss = jnp.zeros((), dtype="float32")
         total_tokens = jnp.zeros((), dtype="int32")
         for batch in train_dataset.as_numpy_iterator():
             state, loss, tokens = train_step(
                 state, batch, sequence_length=batch["inputs_ids"].shape[-1]
             )
-            step += 1
+            steps += 1
             total_loss += loss
             total_tokens += tokens
 
-            if step % save_every == 0:
-                ckpt = {"model": state}
-                checkpoint_manager.save(step, ckpt)
+        print(f"epoch {epoch + 1} steps {steps} avg_loss {total_loss / total_tokens}")
+        if (epoch + 1) % save_every == 0:
+            ckpt = {"model": state}
+            checkpoint_manager.save(epoch + 1, ckpt)
 
-                print("step", step, "avg loss:", loss / tokens)
-        print(f"epoch {epoch + 1} step {step} avg_loss {total_loss / total_tokens}")
+            print("saving checkpoint for epoch", epoch + 1)
 
-        total_loss = jnp.zeros((), dtype="float32")
-        total_tokens = jnp.zeros((), dtype="int32")
-        for batch in val_dataset.as_numpy_iterator():
-            batch_loss, batch_tokens = eval_step(
-                state, batch, sequence_length=batch["inputs_ids"].shape[-1]
+        if (epoch + 1) % eval_every == 0:
+            total_loss = jnp.zeros((), dtype="float32")
+            total_tokens = jnp.zeros((), dtype="int32")
+            for batch in val_dataset.as_numpy_iterator():
+                batch_loss, batch_tokens = eval_step(
+                    state, batch, sequence_length=batch["inputs_ids"].shape[-1]
+                )
+                total_loss += batch_loss
+                total_tokens += batch_tokens
+            print(
+                f"validation epoch {epoch + 1} steps {steps} avg_loss {total_loss / total_tokens}"
             )
-            total_loss += batch_loss
-            total_tokens += batch_tokens
-        print(
-            f"validation epoch {epoch + 1} step {step} avg_loss {total_loss / total_tokens}"
-        )
 
 
 if __name__ == "__main__":
