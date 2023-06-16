@@ -3,6 +3,7 @@ import click
 import jax
 import optax
 import tensorflow_text as tf_text
+import wandb
 from clu import metrics
 from flax import struct
 from jax import random
@@ -42,31 +43,25 @@ class TrainState(train_state.TrainState):
 @click.option("--mlp_hidden_dim", default=128)
 @click.option("--num_layers", default=2)
 @click.option("--num_heads", default=4)
-def main(
-    tokenizer_file,
-    train_data,
-    val_data,
-    model_save_dir,
-    batch_size,
-    num_epochs,
-    save_every,
-    eval_every,
-    num_length_buckets,
-    learning_rate,
-    emb_size,
-    mlp_hidden_dim,
-    num_layers,
-    num_heads,
-):
-    with open(tokenizer_file, "rb") as f:
+def main(**kwargs):
+    wandb.init(config=kwargs)
+    config = wandb.config
+
+    with open(config.tokenizer_file, "rb") as f:
         tokenizer = tf_text.SentencepieceTokenizer(f.read(), add_eos=True)
 
     train_dataset, bucket_boundaries = get_positive_reframing_dataset(
-        train_data, tokenizer, batch_size, num_length_buckets=num_length_buckets
+        config.train_data,
+        tokenizer,
+        config.batch_size,
+        num_length_buckets=config.num_length_buckets,
     )
 
     val_dataset, _ = get_positive_reframing_dataset(
-        val_data, tokenizer, batch_size, num_length_buckets=num_length_buckets
+        config.val_data,
+        tokenizer,
+        config.batch_size,
+        num_length_buckets=config.num_length_buckets,
     )
 
     max_length = bucket_boundaries[-1] - 1
@@ -74,10 +69,10 @@ def main(
     transformer = Transformer(
         max_length=max_length,
         vocab_size=tokenizer.vocab_size(),
-        emb_size=emb_size,
-        mlp_hidden_dim=mlp_hidden_dim,
-        num_layers=num_layers,
-        num_heads=num_heads,
+        emb_size=config.emb_size,
+        mlp_hidden_dim=config.mlp_hidden_dim,
+        num_layers=config.num_layers,
+        num_heads=config.num_heads,
     )
 
     # Create state
@@ -86,11 +81,11 @@ def main(
         params=transformer.init(
             random.PRNGKey(0),
             {
-                k: jnp.zeros((batch_size, max_length), dtype=int)
+                k: jnp.zeros((config.batch_size, max_length), dtype=int)
                 for k in ["inputs_ids", "bidirectional_attention_mask"]
             },
         )["params"],
-        tx=optax.adamw(learning_rate),
+        tx=optax.adamw(config.learning_rate),
         metrics=Metrics.empty(),
     )
 
@@ -120,7 +115,7 @@ def main(
         return loss, mask.sum()
 
     checkpoint_manager = CheckpointManager(
-        model_save_dir,
+        config.model_save_dir,
         PyTreeCheckpointer(),
         CheckpointManagerOptions(max_to_keep=2, create=True),
     )
@@ -128,7 +123,7 @@ def main(
     print("starting train loop")
 
     steps = 0
-    for epoch in range(num_epochs):
+    for epoch in range(config.num_epochs):
         total_loss = jnp.zeros((), dtype="float32")
         total_tokens = jnp.zeros((), dtype="int32")
         for batch in train_dataset.as_numpy_iterator():
@@ -140,13 +135,20 @@ def main(
             total_tokens += tokens
 
         print(f"epoch {epoch + 1} steps {steps} avg_loss {total_loss / total_tokens}")
-        if (epoch + 1) % save_every == 0:
+        wandb.log(
+            {
+                "train/epoch": epoch + 1,
+                "train/mean_per_token_loss": total_loss / total_tokens,
+            },
+            step=steps,
+        )
+        if (epoch + 1) % config.save_every == 0:
             ckpt = {"model": state}
             checkpoint_manager.save(epoch + 1, ckpt)
 
             print("saving checkpoint for epoch", epoch + 1)
 
-        if (epoch + 1) % eval_every == 0:
+        if (epoch + 1) % config.eval_every == 0:
             total_loss = jnp.zeros((), dtype="float32")
             total_tokens = jnp.zeros((), dtype="int32")
             for batch in val_dataset.as_numpy_iterator():
@@ -157,6 +159,12 @@ def main(
                 total_tokens += batch_tokens
             print(
                 f"validation epoch {epoch + 1} steps {steps} avg_loss {total_loss / total_tokens}"
+            )
+            wandb.log(
+                {
+                    "val/mean_per_token_loss": total_loss / total_tokens,
+                },
+                step=steps,
             )
 
 

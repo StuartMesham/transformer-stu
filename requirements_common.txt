@@ -4,3 +4,4 @@ tensorflow-datasets
 clu
 sentencepiece
 click
+wandb

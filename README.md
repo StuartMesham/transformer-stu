@@ -56,3 +56,20 @@ python train_tokenizer.py
 ```bash
 python train.py --tokenizer_file outputs/m.model --train_data data/train.csv --val_data data/dev.csv
 ```
+
+### Perform Hyper-Parameter sweep with WandB
+
+Set WandB project name:
+```bash
+export WANDB_PROJECT=transformer-stu
+```
+
+Create a sweep:
+```bash
+python create_wandb_sweep.py
+```
+
+Launch an agent to perform training runs for the sweep:
+```bash
+wandb agent <username>/<project>/<sweep_id>
+```
