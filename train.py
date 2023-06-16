@@ -98,8 +98,8 @@ def main(**kwargs):
         loss *= mask  # zero loss for padded tokens
         return loss.sum(), mask
 
-    @partial(jax.jit, static_argnames=["sequence_length"])
-    def train_step(state, batch, sequence_length):
+    @partial(jax.jit, static_argnames=["sequence_length", "batch_size"])
+    def train_step(state, batch, sequence_length, batch_size):
         """Train for a single step."""
 
         value_and_grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
@@ -107,8 +107,8 @@ def main(**kwargs):
         state = state.apply_gradients(grads=grads)
         return state, loss, mask.sum()
 
-    @partial(jax.jit, static_argnames=["sequence_length"])
-    def eval_step(state, batch, sequence_length):
+    @partial(jax.jit, static_argnames=["sequence_length", "batch_size"])
+    def eval_step(state, batch, sequence_length, batch_size):
         """Train for a single step."""
 
         loss, mask = loss_fn(state.params, state, batch)
@@ -128,7 +128,7 @@ def main(**kwargs):
         total_tokens = jnp.zeros((), dtype="int32")
         for batch in train_dataset.as_numpy_iterator():
             state, loss, tokens = train_step(
-                state, batch, sequence_length=batch["inputs_ids"].shape[-1]
+                state, batch, sequence_length=batch["inputs_ids"].shape[-1], batch_size=batch["inputs_ids"].shape[0]
             )
             steps += 1
             total_loss += loss
@@ -153,7 +153,7 @@ def main(**kwargs):
             total_tokens = jnp.zeros((), dtype="int32")
             for batch in val_dataset.as_numpy_iterator():
                 batch_loss, batch_tokens = eval_step(
-                    state, batch, sequence_length=batch["inputs_ids"].shape[-1]
+                    state, batch, sequence_length=batch["inputs_ids"].shape[-1], batch_size=batch["inputs_ids"].shape[0]
                 )
                 total_loss += batch_loss
                 total_tokens += batch_tokens

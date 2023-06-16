@@ -57,7 +57,7 @@ def get_positive_reframing_dataset(file_name, tokenizer, batch_size, bucket_boun
         element_length_func=lambda elem: tf.shape(elem["inputs_ids"])[0],
         bucket_boundaries=bucket_boundaries,
         pad_to_bucket_boundary=True,
-        drop_remainder=True,
+        drop_remainder=False,
         bucket_batch_sizes=[batch_size] * (num_length_buckets + 1),
     )
 
