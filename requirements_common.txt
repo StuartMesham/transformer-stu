@@ -1,4 +1,4 @@
-jax[cpu]
+jax
 flax
 tensorflow-datasets
 clu
