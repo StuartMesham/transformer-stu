@@ -1,5 +1,6 @@
 from flax import linen as nn
 import jax.numpy as jnp
+from flax.linen import make_causal_mask
 from jax import random
 
 
@@ -84,6 +85,42 @@ class Transformer(nn.Module):
             emb += MLP(self.mlp_hidden_dim, self.emb_size)(emb)
             emb = nn.LayerNorm()(emb)
         logits = nn.Dense(self.vocab_size)(emb)
+
+        return logits
+
+
+class EncoderDecoderTransformer(nn.Module):
+    """A simple transformer model."""
+
+    max_length: int = 100
+    vocab_size: int = 100
+    emb_size: int = 64
+
+    mlp_hidden_dim: int = 128
+    num_encoder_layers: int = 2
+    num_decoder_layers: int = 2
+
+    pad_token_idx: int = 0
+
+    num_heads: int = 4
+
+    @nn.compact
+    def __call__(self, batch):
+        source_input_ids = batch["source_inputs_ids"]
+        target_input_ids = batch["target_inputs_ids"]
+
+        decoder_attention_mask = make_causal_mask(
+            target_input_ids
+        )
+
+        source_emb = EmbedTokens(self.vocab_size, self.max_length, self.emb_size)(source_input_ids)
+
+        for _ in range(self.num_layers):
+            target_emb += nn.SelfAttention(num_heads=self.num_heads)(target_emb)
+            target_emb = nn.LayerNorm()(target_emb)
+            target_emb += MLP(self.mlp_hidden_dim, self.emb_size)(target_emb)
+            target_emb = nn.LayerNorm()(target_emb)
+        logits = nn.Dense(self.vocab_size)(target_emb)
 
         return logits
 
