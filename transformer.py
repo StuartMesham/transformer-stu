@@ -38,6 +38,22 @@ class MLP(nn.Module):
         return x
 
 
+class EmbedTokens(nn.Module):
+    """Transformer token embeddings with learned positional embeddings"""
+
+    vocab_size: int
+    max_length: int
+    emb_size: int
+
+    @nn.compact
+    def __call__(self, inputs_ids):
+        tok_emb = nn.Embed(self.vocab_size, self.emb_size)(inputs_ids)
+        pos_emb = nn.Embed(self.max_length, self.emb_size)(
+            jnp.array(jnp.arange(0, inputs_ids.shape[-1]))
+        )
+        return tok_emb + pos_emb
+
+
 class Transformer(nn.Module):
     """A simple transformer model."""
 
@@ -60,11 +76,8 @@ class Transformer(nn.Module):
             inputs_ids, batch["bidirectional_attention_mask"], self.pad_token_idx
         )
 
-        tok_emb = nn.Embed(self.vocab_size, self.emb_size)(inputs_ids)
-        pos_emb = nn.Embed(self.max_length, self.emb_size)(
-            jnp.array(jnp.arange(0, inputs_ids.shape[-1]))
-        )
-        emb = tok_emb + pos_emb
+        emb = EmbedTokens(self.vocab_size, self.max_length, self.emb_size)(inputs_ids)
+
         for _ in range(self.num_layers):
             emb += nn.SelfAttention(num_heads=self.num_heads)(emb, attention_mask)
             emb = nn.LayerNorm()(emb)
