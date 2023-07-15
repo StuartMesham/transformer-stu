@@ -1,4 +1,9 @@
+import functools
 import tensorflow as tf
+import tensorflow_text as text
+
+_MASK_TOKEN = 0
+_EOS_TOKEN = 2
 
 
 def _get_bucket_boundaries(lengths, n):
@@ -18,14 +23,29 @@ def _get_bucket_boundaries(lengths, n):
     return bin_lengths
 
 
-def get_positive_reframing_dataset(file_name, tokenizer, batch_size, bucket_boundaries=None, num_length_buckets=5):
+def get_positive_reframing_dataset(
+    file_name, tokenizer, batch_size, bucket_boundaries=None, num_length_buckets=5
+):
     def tokenize_input_target_pair(input, target):
         return tokenizer.tokenize(input), tokenizer.tokenize(target)
 
-    def convert_to_prefix_lm_example(input, target):
+    def convert_to_prefix_lm_example(input, target, vocab_size):
+
+        # https://www.tensorflow.org/text/guide/bert_preprocessing_guide#masked_language_model_task
+        masked_input, _, _ = text.mask_language_model(
+            tf.RaggedTensor.from_tensor(tf.expand_dims(input, axis=0)),
+            item_selector=text.RandomItemSelector(
+                max_selections_per_batch=1000,
+                selection_rate=0.15,
+                unselectable_ids=[_EOS_TOKEN],
+            ),
+            mask_values_chooser=text.MaskValuesChooser(vocab_size, _MASK_TOKEN),
+        )
+        masked_input = tf.squeeze(masked_input.to_tensor(), axis=[0])
+
         return {
-            "inputs_ids": tf.concat((input, target[:-1]), axis=0),
-            "labels": tf.concat((tf.zeros_like(input)[:-1], target), axis=0),
+            "inputs_ids": tf.concat((masked_input, target[:-1]), axis=0),
+            "labels": tf.concat((input[:-1], target), axis=0),
             "bidirectional_attention_mask": tf.concat(
                 (tf.ones_like(input), tf.zeros_like(target[:-1])), axis=0
             ),
@@ -39,7 +59,11 @@ def get_positive_reframing_dataset(file_name, tokenizer, batch_size, bucket_boun
             header=True,
         )
         .map(tokenize_input_target_pair)
-        .map(convert_to_prefix_lm_example)
+        .map(
+            functools.partial(
+                convert_to_prefix_lm_example, vocab_size=tokenizer.vocab_size().numpy()
+            )
+        )
     )
 
     if bucket_boundaries is None:
