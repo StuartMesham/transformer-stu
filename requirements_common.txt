@@ -4,3 +4,4 @@ clu
 sentencepiece
 click
 wandb
+pytest

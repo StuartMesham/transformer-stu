@@ -23,33 +23,34 @@ def _get_bucket_boundaries(lengths, n):
     return bin_lengths
 
 
+def _convert_to_prefix_lm_example(input, target, vocab_size):
+
+    # https://www.tensorflow.org/text/guide/bert_preprocessing_guide#masked_language_model_task
+    masked_input, _, _ = text.mask_language_model(
+        tf.RaggedTensor.from_tensor(tf.expand_dims(input, axis=0)),
+        item_selector=text.RandomItemSelector(
+            max_selections_per_batch=1000,
+            selection_rate=0.15,
+            unselectable_ids=[_EOS_TOKEN],
+        ),
+        mask_values_chooser=text.MaskValuesChooser(vocab_size, _MASK_TOKEN),
+    )
+    masked_input = tf.squeeze(masked_input.to_tensor(), axis=[0])
+
+    return {
+        "inputs_ids": tf.concat((masked_input, target[:-1]), axis=0),
+        "labels": tf.concat((input[:-1], target), axis=0),
+        "bidirectional_attention_mask": tf.concat(
+            (tf.ones_like(input), tf.zeros_like(target[:-1])), axis=0
+        ),
+    }
+
+
 def get_positive_reframing_dataset(
     file_name, tokenizer, batch_size, bucket_boundaries=None, num_length_buckets=5
 ):
     def tokenize_input_target_pair(input, target):
         return tokenizer.tokenize(input), tokenizer.tokenize(target)
-
-    def convert_to_prefix_lm_example(input, target, vocab_size):
-
-        # https://www.tensorflow.org/text/guide/bert_preprocessing_guide#masked_language_model_task
-        masked_input, _, _ = text.mask_language_model(
-            tf.RaggedTensor.from_tensor(tf.expand_dims(input, axis=0)),
-            item_selector=text.RandomItemSelector(
-                max_selections_per_batch=1000,
-                selection_rate=0.15,
-                unselectable_ids=[_EOS_TOKEN],
-            ),
-            mask_values_chooser=text.MaskValuesChooser(vocab_size, _MASK_TOKEN),
-        )
-        masked_input = tf.squeeze(masked_input.to_tensor(), axis=[0])
-
-        return {
-            "inputs_ids": tf.concat((masked_input, target[:-1]), axis=0),
-            "labels": tf.concat((input[:-1], target), axis=0),
-            "bidirectional_attention_mask": tf.concat(
-                (tf.ones_like(input), tf.zeros_like(target[:-1])), axis=0
-            ),
-        }
 
     data = (
         tf.data.experimental.CsvDataset(
@@ -61,7 +62,7 @@ def get_positive_reframing_dataset(
         .map(tokenize_input_target_pair)
         .map(
             functools.partial(
-                convert_to_prefix_lm_example, vocab_size=tokenizer.vocab_size().numpy()
+                _convert_to_prefix_lm_example, vocab_size=tokenizer.vocab_size().numpy()
             )
         )
     )
