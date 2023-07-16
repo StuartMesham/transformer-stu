@@ -1,6 +1,5 @@
 jax
 flax
-tensorflow-datasets
 clu
 sentencepiece
 click
