@@ -26,7 +26,7 @@ Options include:
 
 ## Setup
 ### Install Requirements
-On Apple Silicon you must use Python 3.9 and run
+On Apple Silicon you must use Python 3.11 and run
 ```bash
 pip install -r requirements_apple_silicon.txt
 ```
