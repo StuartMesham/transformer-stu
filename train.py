@@ -46,6 +46,7 @@ class TrainState(train_state.TrainState):
 @click.option("--mlp_hidden_dim", default=128)
 @click.option("--num_layers", default=2)
 @click.option("--num_heads", default=4)
+@click.option("--label_smoothing_mass", default=0.0)
 def main(**kwargs):
     wandb.init(config=kwargs)
     config = wandb.config
@@ -103,9 +104,16 @@ def main(**kwargs):
     def loss_fn(params, state, batch):
         mask = batch["labels"] != 0
         logits = state.apply_fn({"params": params}, batch)
-        loss = optax.softmax_cross_entropy_with_integer_labels(
-            logits=logits, labels=batch["labels"]
-        )
+        if config.label_smoothing_mass:
+            labels = optax.smooth_labels(
+                jax.nn.one_hot(batch["labels"], logits.shape[-1]),
+                config.label_smoothing_mass,
+            )
+            loss = optax.softmax_cross_entropy(logits=logits, labels=labels)
+        else:
+            loss = optax.softmax_cross_entropy_with_integer_labels(
+                logits=logits, labels=batch["labels"]
+            )
         loss *= mask  # zero loss for padded tokens
         return loss.sum(), mask
 
