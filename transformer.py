@@ -68,8 +68,10 @@ class Transformer(nn.Module):
 
     num_heads: int = 4
 
+    dropout_rate: float = 0
+
     @nn.compact
-    def __call__(self, batch):
+    def __call__(self, batch, eval_mode=False):
         inputs_ids = batch["inputs_ids"]
 
         attention_mask = make_prefix_lm_mask(
@@ -77,14 +79,22 @@ class Transformer(nn.Module):
         )
 
         emb = EmbedTokens(self.vocab_size, self.max_length, self.emb_size)(inputs_ids)
+        emb = nn.Dropout(self.dropout_rate, deterministic=eval_mode)(emb)
 
         for _ in range(self.num_layers):
-            emb += nn.SelfAttention(
-                num_heads=self.num_heads,
-                use_bias=False,
-            )(emb, attention_mask)
+            emb += nn.Dropout(self.dropout_rate, deterministic=eval_mode)(
+                nn.SelfAttention(
+                    num_heads=self.num_heads,
+                    dropout_rate=self.dropout_rate,
+                    use_bias=False,
+                    broadcast_dropout=False,
+                    deterministic=eval_mode,
+                )(emb, attention_mask)
+            )
             emb = nn.LayerNorm()(emb)
-            emb += MLP(self.mlp_hidden_dim, self.emb_size)(emb)
+            emb += nn.Dropout(self.dropout_rate, deterministic=eval_mode)(
+                MLP(self.mlp_hidden_dim, self.emb_size)(emb)
+            )
             emb = nn.LayerNorm()(emb)
         logits = nn.Dense(self.vocab_size)(emb)
 

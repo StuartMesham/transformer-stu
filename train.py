@@ -1,3 +1,6 @@
+"""
+TODO: Add PRNG management for Dropout
+"""
 from functools import partial
 import click
 import jax
@@ -101,9 +104,9 @@ def main(**kwargs):
         metrics=Metrics.empty(),
     )
 
-    def loss_fn(params, state, batch):
+    def loss_fn(params, state, batch, eval_mode=False):
         mask = batch["labels"] != 0
-        logits = state.apply_fn({"params": params}, batch)
+        logits = state.apply_fn({"params": params}, batch, eval_mode)
         if config.label_smoothing_mass:
             labels = optax.smooth_labels(
                 jax.nn.one_hot(batch["labels"], logits.shape[-1]),
@@ -130,7 +133,7 @@ def main(**kwargs):
     def eval_step(state, batch, sequence_length, batch_size):
         """Train for a single step."""
 
-        loss, mask = loss_fn(state.params, state, batch)
+        loss, mask = loss_fn(state.params, state, batch, eval_mode=True)
         return loss, mask.sum()
 
     checkpoint_manager = CheckpointManager(
