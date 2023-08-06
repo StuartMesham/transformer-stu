@@ -1,12 +1,23 @@
 import sentencepiece as spm
+import click
 
-spm.SentencePieceTrainer.train(
-    input="outputs/flattened_train.txt",
-    model_prefix="outputs/m",
-    vocab_size=8000,
-    model_type="bpe",
-    pad_id=0,
-    unk_id=1,
-    bos_id=-1,
-    eos_id=2,
-)
+
+@click.command()
+@click.option("--vocab_size", default=8000)
+@click.option("--model_prefix", required=True)
+@click.argument("input", nargs=-1)
+def main(**kwargs):
+    kwargs["input"] = ",".join(kwargs["input"])
+
+    spm.SentencePieceTrainer.train(
+        model_type="bpe",
+        pad_id=0,
+        unk_id=1,
+        bos_id=-1,
+        eos_id=2,
+        **kwargs,
+    )
+
+
+if __name__ == "__main__":
+    main()

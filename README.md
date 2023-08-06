@@ -52,7 +52,7 @@ data
 ```bash
 mkdir outputs
 python flatten_data.py --input_file data/train.csv --output_file outputs/flattened_train.txt
-python train_tokenizer.py
+python train_tokenizer.py --model_prefix outputs/m outputs/flattened_train.txt
 ```
 
 ### Train Prefix-LM
