@@ -79,7 +79,10 @@ class Transformer(nn.Module):
         emb = EmbedTokens(self.vocab_size, self.max_length, self.emb_size)(inputs_ids)
 
         for _ in range(self.num_layers):
-            emb += nn.SelfAttention(num_heads=self.num_heads)(emb, attention_mask)
+            emb += nn.SelfAttention(
+                num_heads=self.num_heads,
+                use_bias=False,
+            )(emb, attention_mask)
             emb = nn.LayerNorm()(emb)
             emb += MLP(self.mlp_hidden_dim, self.emb_size)(emb)
             emb = nn.LayerNorm()(emb)
