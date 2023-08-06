@@ -2,7 +2,7 @@ import functools
 import tensorflow as tf
 import tensorflow_text as text
 
-_MASK_TOKEN = 0
+_MASK_TOKEN = 3
 _EOS_TOKEN = 2
 
 
@@ -46,13 +46,11 @@ def _convert_to_prefix_lm_example(input, target, vocab_size):
     }
 
 
-def get_positive_reframing_dataset(
-    file_name, tokenizer, batch_size, bucket_boundaries=None, num_length_buckets=5
-):
+def get_positive_reframing_dataset(file_name, tokenizer):
     def tokenize_input_target_pair(input, target):
         return tokenizer.tokenize(input), tokenizer.tokenize(target)
 
-    data = (
+    return (
         tf.data.experimental.CsvDataset(
             file_name,
             record_defaults=["", ""],
@@ -67,6 +65,30 @@ def get_positive_reframing_dataset(
         )
     )
 
+
+def get_translation_dataset(inputs_file_name, targets_file_name, tokenizer):
+    def tokenize_input_target_pair(input, target):
+        return tokenizer.tokenize(input), tokenizer.tokenize(target)
+
+    return (
+        tf.data.Dataset.zip(
+            tf.data.TextLineDataset(
+                inputs_file_name,
+            ),
+            tf.data.TextLineDataset(
+                targets_file_name,
+            ),
+        )
+        .map(tokenize_input_target_pair)
+        .map(
+            functools.partial(
+                _convert_to_prefix_lm_example, vocab_size=tokenizer.vocab_size().numpy()
+            )
+        )
+    )
+
+
+def bucket(data, batch_size, bucket_boundaries=None, num_length_buckets=5):
     if bucket_boundaries is None:
         print("finding bucket boundaries")
         lengths = []

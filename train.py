@@ -6,6 +6,7 @@ import tensorflow_text as tf_text
 import wandb
 from clu import metrics
 from flax import struct
+from tqdm.auto import tqdm
 from jax import random
 import jax.numpy as jnp
 from flax.training import train_state
@@ -15,7 +16,7 @@ from orbax.checkpoint import (
     PyTreeCheckpointer,
 )
 
-from data_loading import get_positive_reframing_dataset
+from data_loading import get_translation_dataset, bucket
 from transformer import Transformer
 
 
@@ -30,8 +31,10 @@ class TrainState(train_state.TrainState):
 
 @click.command()
 @click.option("--tokenizer_file", required=True)
-@click.option("--train_data", required=True)
-@click.option("--val_data", required=True)
+@click.option("--train_inputs", required=True)
+@click.option("--train_targets", required=True)
+@click.option("--val_inputs", required=True)
+@click.option("--val_targets", required=True)
 @click.option("--model_save_dir", default="model_saves")
 @click.option("--batch_size", default=32)
 @click.option("--num_epochs", default=5)
@@ -50,16 +53,24 @@ def main(**kwargs):
     with open(config.tokenizer_file, "rb") as f:
         tokenizer = tf_text.SentencepieceTokenizer(f.read(), add_eos=True)
 
-    train_dataset, bucket_boundaries = get_positive_reframing_dataset(
-        config.train_data,
+    train_dataset = get_translation_dataset(
+        config.train_inputs,
+        config.train_targets,
         tokenizer,
+    )
+    train_dataset, bucket_boundaries = bucket(
+        train_dataset,
         config.batch_size,
         num_length_buckets=config.num_length_buckets,
     )
 
-    val_dataset, _ = get_positive_reframing_dataset(
-        config.val_data,
+    val_dataset = get_translation_dataset(
+        config.val_inputs,
+        config.val_targets,
         tokenizer,
+    )
+    val_dataset, _ = bucket(
+        val_dataset,
         config.batch_size,
         num_length_buckets=config.num_length_buckets,
     )
@@ -126,9 +137,12 @@ def main(**kwargs):
     for epoch in range(config.num_epochs):
         total_loss = jnp.zeros((), dtype="float32")
         total_tokens = jnp.zeros((), dtype="int32")
-        for batch in train_dataset.as_numpy_iterator():
+        for batch in tqdm(train_dataset.as_numpy_iterator()):
             state, loss, tokens = train_step(
-                state, batch, sequence_length=batch["inputs_ids"].shape[-1], batch_size=batch["inputs_ids"].shape[0]
+                state,
+                batch,
+                sequence_length=batch["inputs_ids"].shape[-1],
+                batch_size=batch["inputs_ids"].shape[0],
             )
             steps += 1
             total_loss += loss
@@ -153,7 +167,10 @@ def main(**kwargs):
             total_tokens = jnp.zeros((), dtype="int32")
             for batch in val_dataset.as_numpy_iterator():
                 batch_loss, batch_tokens = eval_step(
-                    state, batch, sequence_length=batch["inputs_ids"].shape[-1], batch_size=batch["inputs_ids"].shape[0]
+                    state,
+                    batch,
+                    sequence_length=batch["inputs_ids"].shape[-1],
+                    batch_size=batch["inputs_ids"].shape[0],
                 )
                 total_loss += batch_loss
                 total_tokens += batch_tokens

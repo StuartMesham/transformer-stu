@@ -15,6 +15,7 @@ def main(**kwargs):
         unk_id=1,
         bos_id=-1,
         eos_id=2,
+        user_defined_symbols="<mask>",
         **kwargs,
     )
 
