@@ -1,6 +1,3 @@
-"""
-TODO: Add PRNG management for Dropout
-"""
 from functools import partial
 import click
 import jax
@@ -49,6 +46,7 @@ class TrainState(train_state.TrainState):
 @click.option("--mlp_hidden_dim", default=128)
 @click.option("--num_layers", default=2)
 @click.option("--num_heads", default=4)
+@click.option("--dropout_rate", default=0.1)
 @click.option("--label_smoothing_mass", default=0.0)
 def main(**kwargs):
     wandb.init(config=kwargs)
@@ -88,25 +86,31 @@ def main(**kwargs):
         mlp_hidden_dim=config.mlp_hidden_dim,
         num_layers=config.num_layers,
         num_heads=config.num_heads,
+        dropout_rate=config.dropout_rate,
     )
+
+    key, params_key = random.split(random.PRNGKey(0))
 
     # Create state
     state = TrainState.create(
         apply_fn=transformer.apply,
         params=transformer.init(
-            random.PRNGKey(0),
+            params_key,
             {
                 k: jnp.zeros((config.batch_size, max_length), dtype=int)
                 for k in ["inputs_ids", "bidirectional_attention_mask"]
             },
+            eval_mode=True,
         )["params"],
         tx=optax.adamw(config.learning_rate),
         metrics=Metrics.empty(),
     )
 
-    def loss_fn(params, state, batch, eval_mode=False):
+    def loss_fn(params, state, batch, dropout_key, eval_mode=False):
         mask = batch["labels"] != 0
-        logits = state.apply_fn({"params": params}, batch, eval_mode)
+        logits = state.apply_fn(
+            {"params": params}, batch, eval_mode, rngs={"dropout": dropout_key}
+        )
         if config.label_smoothing_mass:
             labels = optax.smooth_labels(
                 jax.nn.one_hot(batch["labels"], logits.shape[-1]),
@@ -121,11 +125,11 @@ def main(**kwargs):
         return loss.sum(), mask
 
     @partial(jax.jit, static_argnames=["sequence_length", "batch_size"])
-    def train_step(state, batch, sequence_length, batch_size):
+    def train_step(state, batch, dropout_key, sequence_length, batch_size):
         """Train for a single step."""
 
         value_and_grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
-        (loss, mask), grads = value_and_grad_fn(state.params, state, batch)
+        (loss, mask), grads = value_and_grad_fn(state.params, state, batch, dropout_key)
         state = state.apply_gradients(grads=grads)
         return state, loss, mask.sum()
 
@@ -148,10 +152,13 @@ def main(**kwargs):
     for epoch in range(config.num_epochs):
         total_loss = jnp.zeros((), dtype="float32")
         total_tokens = jnp.zeros((), dtype="int32")
+        print(f"key at epoch {epoch}:", key)
         for batch in tqdm(train_dataset.as_numpy_iterator()):
+            key, dropout_key = random.split(key)
             state, loss, tokens = train_step(
                 state,
                 batch,
+                dropout_key,
                 sequence_length=batch["inputs_ids"].shape[-1],
                 batch_size=batch["inputs_ids"].shape[0],
             )
