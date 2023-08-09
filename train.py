@@ -123,10 +123,10 @@ def main(**kwargs):
         metrics=Metrics.empty(),
     )
 
-    def loss_fn(params, state, batch, dropout_key, eval_mode=False):
+    def loss_fn(params, state, batch, dropout_key=None, eval_mode=False):
         mask = batch["labels"] != 0
         logits = state.apply_fn(
-            {"params": params}, batch, eval_mode, rngs={"dropout": dropout_key}
+            {"params": params}, batch, eval_mode, rngs={"dropout": dropout_key} if not eval_mode else None
         )
         if config.label_smoothing_mass:
             labels = optax.smooth_labels(
