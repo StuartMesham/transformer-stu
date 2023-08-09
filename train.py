@@ -48,6 +48,7 @@ class TrainState(train_state.TrainState):
 @click.option("--num_heads", default=4)
 @click.option("--dropout_rate", default=0.1)
 @click.option("--label_smoothing_mass", default=0.0)
+@click.option("--warmup_steps", default=1000)
 def main(**kwargs):
     wandb.init(config=kwargs)
     config = wandb.config
@@ -89,6 +90,12 @@ def main(**kwargs):
         dropout_rate=config.dropout_rate,
     )
 
+    lr_schedule = optax.linear_schedule(
+        init_value=0.0,
+        end_value=config.learning_rate,
+        transition_steps=config.warmup_steps,
+    )
+
     key, params_key = random.split(random.PRNGKey(0))
 
     # Create state
@@ -102,7 +109,7 @@ def main(**kwargs):
             },
             eval_mode=True,
         )["params"],
-        tx=optax.adamw(config.learning_rate),
+        tx=optax.adamw(lr_schedule),
         metrics=Metrics.empty(),
     )
 
@@ -171,6 +178,7 @@ def main(**kwargs):
             {
                 "train/epoch": epoch + 1,
                 "train/mean_per_token_loss": total_loss / total_tokens,
+                "train/learning_rate": lr_schedule(steps)
             },
             step=steps,
         )
