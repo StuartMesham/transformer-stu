@@ -49,6 +49,8 @@ class TrainState(train_state.TrainState):
 @click.option("--dropout_rate", default=0.1)
 @click.option("--label_smoothing_mass", default=0.0)
 @click.option("--warmup_steps", default=1000)
+@click.option("--train_bucket_boundaries", type=str, required=False)
+@click.option("--validation_bucket_boundaries", type=str, required=False)
 def main(**kwargs):
     wandb.init(config=kwargs)
     config = wandb.config
@@ -65,6 +67,9 @@ def main(**kwargs):
         train_dataset,
         config.batch_size,
         num_length_buckets=config.num_length_buckets,
+        bucket_boundaries=[int(b) for b in config.train_bucket_boundaries.split(",")]
+        if config.train_bucket_boundaries
+        else None,
     )
 
     val_dataset = get_translation_dataset(
@@ -76,6 +81,11 @@ def main(**kwargs):
         val_dataset,
         config.batch_size,
         num_length_buckets=config.num_length_buckets,
+        bucket_boundaries=[
+            int(b) for b in config.validation_bucket_boundaries.split(",")
+        ]
+        if config.validation_bucket_boundaries
+        else None,
     )
 
     max_length = bucket_boundaries[-1] - 1
@@ -178,7 +188,7 @@ def main(**kwargs):
             {
                 "train/epoch": epoch + 1,
                 "train/mean_per_token_loss": total_loss / total_tokens,
-                "train/learning_rate": lr_schedule(steps)
+                "train/learning_rate": lr_schedule(steps),
             },
             step=steps,
         )
