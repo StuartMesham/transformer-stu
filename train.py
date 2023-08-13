@@ -15,6 +15,7 @@ from orbax.checkpoint import (
     CheckpointManagerOptions,
     PyTreeCheckpointer,
 )
+import tensorflow as tf
 
 from data_loading import get_translation_dataset, bucket
 from transformer import Transformer
@@ -87,6 +88,9 @@ def main(**kwargs):
         if config.validation_bucket_boundaries
         else None,
     )
+
+    train_dataset = train_dataset.prefetch(tf.data.AUTOTUNE)
+    val_dataset = val_dataset.prefetch(tf.data.AUTOTUNE)
 
     max_length = bucket_boundaries[-1] - 1
 
