@@ -168,7 +168,6 @@ def main(**kwargs):
     for epoch in range(config.num_epochs):
         total_loss = jnp.zeros((), dtype="float32")
         total_tokens = jnp.zeros((), dtype="int32")
-        print(f"key at epoch {epoch}:", key)
         for batch in tqdm(train_dataset.as_numpy_iterator()):
             key, dropout_key = random.split(key)
             state, loss, tokens = train_step(
