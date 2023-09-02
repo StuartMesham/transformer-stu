@@ -222,6 +222,8 @@ def main(**kwargs):
         shutil.make_archive(file_name, 'zip', file_name)
         wandb.save(f"{file_name}.zip")
 
+    wandb.save(config.tokenizer_file)
+
 
 if __name__ == "__main__":
     main()
