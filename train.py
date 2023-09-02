@@ -1,15 +1,18 @@
+import os.path
+import shutil
 from functools import partial
+from glob import glob
+
 import click
 import jax
 import optax
 import tensorflow_text as tf_text
 import wandb
-from clu import metrics
-from flax import struct
+from flax.training.early_stopping import EarlyStopping
 from tqdm.auto import tqdm
 from jax import random
 import jax.numpy as jnp
-from flax.training import train_state
+from flax.training.train_state import TrainState
 from orbax.checkpoint import (
     CheckpointManager,
     CheckpointManagerOptions,
@@ -19,15 +22,6 @@ import tensorflow as tf
 
 from data_loading import get_translation_dataset, bucket
 from transformer import Transformer
-
-
-@struct.dataclass
-class Metrics(metrics.Collection):
-    loss: metrics.Average.from_output("loss")
-
-
-class TrainState(train_state.TrainState):
-    metrics: Metrics
 
 
 @click.command()
@@ -50,6 +44,7 @@ class TrainState(train_state.TrainState):
 @click.option("--dropout_rate", default=0.1)
 @click.option("--label_smoothing_mass", default=0.0)
 @click.option("--warmup_steps", default=1000)
+@click.option("--early_stopping_patience", default=2)
 @click.option("--train_bucket_boundaries", type=str, required=False)
 @click.option("--validation_bucket_boundaries", type=str, required=False)
 def main(**kwargs):
@@ -124,7 +119,6 @@ def main(**kwargs):
             eval_mode=True,
         )["params"],
         tx=optax.adamw(lr_schedule),
-        metrics=Metrics.empty(),
     )
 
     def loss_fn(params, state, batch, dropout_key=None, eval_mode=False):
@@ -164,12 +158,13 @@ def main(**kwargs):
     checkpoint_manager = CheckpointManager(
         config.model_save_dir,
         PyTreeCheckpointer(),
-        CheckpointManagerOptions(max_to_keep=2, create=True),
+        CheckpointManagerOptions(max_to_keep=1, create=True, best_mode="min", best_fn=lambda metrics: metrics["val/mean_per_token_loss"]),
     )
 
     print("starting train loop")
 
     steps = 0
+    early_stop = EarlyStopping(patience=config.early_stopping_patience)
     for epoch in range(config.num_epochs):
         total_loss = jnp.zeros((), dtype="float32")
         total_tokens = jnp.zeros((), dtype="int32")
@@ -187,20 +182,11 @@ def main(**kwargs):
             total_loss += loss
             total_tokens += tokens
 
-        print(f"epoch {epoch + 1} steps {steps} avg_loss {total_loss / total_tokens}")
-        wandb.log(
-            {
-                "train/epoch": epoch + 1,
-                "train/mean_per_token_loss": total_loss / total_tokens,
-                "train/learning_rate": lr_schedule(steps),
-            },
-            step=steps,
-        )
-        if (epoch + 1) % config.save_every == 0:
-            ckpt = {"model": state}
-            checkpoint_manager.save(epoch + 1, ckpt)
-
-            print("saving checkpoint for epoch", epoch + 1)
+        metrics = {
+            "train/epoch": epoch + 1,
+            "train/mean_per_token_loss": (total_loss / total_tokens).item(),
+            "train/learning_rate": lr_schedule(steps).item(),
+        }
 
         if (epoch + 1) % config.eval_every == 0:
             total_loss = jnp.zeros((), dtype="float32")
@@ -214,15 +200,27 @@ def main(**kwargs):
                 )
                 total_loss += batch_loss
                 total_tokens += batch_tokens
-            print(
-                f"validation epoch {epoch + 1} steps {steps} avg_loss {total_loss / total_tokens}"
-            )
-            wandb.log(
-                {
-                    "val/mean_per_token_loss": total_loss / total_tokens,
-                },
-                step=steps,
-            )
+            metrics["val/mean_per_token_loss"] = (total_loss / total_tokens).item()
+
+            early_stop.update(metrics["val/mean_per_token_loss"])
+
+            if (epoch + 1) % config.save_every == 0:
+                ckpt = state.params
+                checkpoint_manager.save(epoch + 1, ckpt, metrics=metrics)
+
+                print("saving checkpoint for epoch", epoch + 1)
+
+        print(f"steps: {steps}, metrics: {metrics}")
+        wandb.log(metrics, step=steps)
+
+        if early_stop.should_stop:
+            print("stopping early")
+            break
+
+    for file_name in glob(os.path.join(config.model_save_dir, "*")):
+        print("zipping", file_name)
+        shutil.make_archive(file_name, 'zip', file_name)
+        wandb.save(f"{file_name}.zip")
 
 
 if __name__ == "__main__":
