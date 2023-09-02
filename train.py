@@ -44,7 +44,7 @@ from transformer import Transformer
 @click.option("--dropout_rate", default=0.1)
 @click.option("--label_smoothing_mass", default=0.0)
 @click.option("--warmup_steps", default=1000)
-@click.option("--early_stopping_patience", default=2)
+@click.option("--early_stopping_patience", default=1)
 @click.option("--train_bucket_boundaries", type=str, required=False)
 @click.option("--validation_bucket_boundaries", type=str, required=False)
 def main(**kwargs):
@@ -202,7 +202,7 @@ def main(**kwargs):
                 total_tokens += batch_tokens
             metrics["val/mean_per_token_loss"] = (total_loss / total_tokens).item()
 
-            early_stop.update(metrics["val/mean_per_token_loss"])
+            _, early_stop = early_stop.update(metrics["val/mean_per_token_loss"])
 
             if (epoch + 1) % config.save_every == 0:
                 ckpt = state.params
