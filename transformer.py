@@ -1,6 +1,7 @@
 from flax import linen as nn
 import jax.numpy as jnp
 from jax import random
+import caching
 
 
 def make_prefix_lm_mask(tokens, tokens_has_bidirectional_attention, pad_token_idx):
@@ -44,6 +45,7 @@ class EmbedTokens(nn.Module):
     vocab_size: int
     max_length: int
     emb_size: int
+    decode: bool
 
     @nn.compact
     def __call__(self, token_ids, position_ids):
@@ -67,6 +69,7 @@ class Transformer(nn.Module):
     num_heads: int = 4
 
     dropout_rate: float = 0
+    decode: bool = False
 
     @nn.compact
     def __call__(self, batch, eval_mode=False):
@@ -77,17 +80,18 @@ class Transformer(nn.Module):
             token_ids, batch["bidirectional_attention_mask"], self.pad_token_idx
         )
 
-        emb = EmbedTokens(self.vocab_size, self.max_length, self.emb_size)(token_ids, position_ids)
+        emb = EmbedTokens(self.vocab_size, self.max_length, self.emb_size, self.decode)(token_ids, position_ids)
         emb = nn.Dropout(self.dropout_rate, deterministic=eval_mode)(emb)
 
         for _ in range(self.num_layers):
             emb += nn.Dropout(self.dropout_rate, deterministic=eval_mode)(
-                nn.SelfAttention(
+                caching.SelfAttention(
                     num_heads=self.num_heads,
                     dropout_rate=self.dropout_rate,
                     use_bias=False,
                     broadcast_dropout=False,
                     deterministic=eval_mode,
+                    decode=self.decode,
                 )(emb, attention_mask)
             )
             emb = nn.LayerNorm()(emb)
