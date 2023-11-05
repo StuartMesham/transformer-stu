@@ -1,3 +1,9 @@
+"""
+Adapted from flax.linen.attention
+Lines 118, 120-123 and 147 were modified to allow us to initialise the cache using bidirectional attention for the
+    prefix when using a decoder-only prefix-lm.
+"""
+
 import functools
 from typing import Optional, Callable
 
@@ -112,9 +118,10 @@ class MultiHeadDotProductAttention(Module):
                                  lambda x: x, key)
       cached_value = self.variable('cache', 'cached_value',
                                    lambda x: x, value)
-      cache_index = self.variable('cache', 'cache_index',
-                                  lambda: jnp.array(0, dtype=jnp.int32))
       if is_initialized:
+        cache_index = self.variable('cache', 'cache_index')
+        cache_mask = self.variable('cache', 'cache_mask')
+
         *batch_dims, max_length, num_heads, depth_per_head = (
             cached_key.value.shape)
         # shape check of cached keys against query input
@@ -137,6 +144,7 @@ class MultiHeadDotProductAttention(Module):
         # not the remaining zero elements.
         mask = combine_masks(
             mask,
+            cache_mask.value,
             jnp.broadcast_to(jnp.arange(max_length) <= cur_index,
                              tuple(batch_dims) + (1, 1, max_length)))
 
