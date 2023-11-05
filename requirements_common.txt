@@ -6,3 +6,4 @@ click
 wandb
 pytest
 tqdm
+pre-commit

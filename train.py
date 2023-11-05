@@ -124,7 +124,15 @@ def main(**kwargs):
     def loss_fn(params, state, batch, dropout_key=None, eval_mode=False):
         mask = batch["labels"] != 0
         logits = state.apply_fn(
-            {"params": params}, batch | {"position_ids": jnp.broadcast_to(jnp.arange(0, batch["token_ids"].shape[1]), batch["token_ids"].shape)}, eval_mode, rngs={"dropout": dropout_key} if not eval_mode else None
+            {"params": params},
+            batch
+            | {
+                "position_ids": jnp.broadcast_to(
+                    jnp.arange(0, batch["token_ids"].shape[1]), batch["token_ids"].shape
+                )
+            },
+            eval_mode,
+            rngs={"dropout": dropout_key} if not eval_mode else None,
         )
         if config.label_smoothing_mass:
             labels = optax.smooth_labels(
@@ -158,7 +166,12 @@ def main(**kwargs):
     checkpoint_manager = CheckpointManager(
         config.model_save_dir,
         PyTreeCheckpointer(),
-        CheckpointManagerOptions(max_to_keep=1, create=True, best_mode="min", best_fn=lambda metrics: metrics["val/mean_per_token_loss"]),
+        CheckpointManagerOptions(
+            max_to_keep=1,
+            create=True,
+            best_mode="min",
+            best_fn=lambda metrics: metrics["val/mean_per_token_loss"],
+        ),
     )
 
     print("starting train loop")
@@ -218,7 +231,7 @@ def main(**kwargs):
 
     for file_name in glob(os.path.join(config.model_save_dir, "*")):
         print("zipping", file_name)
-        shutil.make_archive(file_name, 'zip', file_name)
+        shutil.make_archive(file_name, "zip", file_name)
         wandb.save(f"{file_name}.zip")
 
     wandb.save(config.tokenizer_file)

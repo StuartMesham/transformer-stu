@@ -43,8 +43,6 @@ def test_graph_mode_convert_to_prefix_lm_example():
     assert data_loading._EOS_TOKEN == 2
     assert data_loading._MASK_TOKEN == 0
 
-    input = tf.constant([3, 5, 7, 7, 2])
-    target = tf.constant([8, 3, 5, 2])
     vocab_size = 5000
     tf.random.set_seed(111)
 

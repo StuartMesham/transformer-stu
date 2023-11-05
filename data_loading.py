@@ -24,7 +24,6 @@ def _get_bucket_boundaries(lengths, n):
 
 
 def _convert_to_prefix_lm_example(input, target, vocab_size):
-
     # https://www.tensorflow.org/text/guide/bert_preprocessing_guide#masked_language_model_task
     masked_input, _, _ = text.mask_language_model(
         tf.RaggedTensor.from_tensor(tf.expand_dims(input, axis=0)),

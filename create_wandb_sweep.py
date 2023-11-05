@@ -27,7 +27,7 @@ def main():
             "num_heads": {"values": [4, 8, 16]},
             "label_smoothing_mass": {"values": [0.1]},
             "warmup_steps": {"values": [4000]},
-            "dropout_rate": {"values": [0.1]}
+            "dropout_rate": {"values": [0.1]},
         },
     }
 

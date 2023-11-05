@@ -80,7 +80,9 @@ class Transformer(nn.Module):
             token_ids, batch["bidirectional_attention_mask"], self.pad_token_idx
         )
 
-        emb = EmbedTokens(self.vocab_size, self.max_length, self.emb_size, self.decode)(token_ids, position_ids)
+        emb = EmbedTokens(self.vocab_size, self.max_length, self.emb_size, self.decode)(
+            token_ids, position_ids
+        )
         emb = nn.Dropout(self.dropout_rate, deterministic=eval_mode)(emb)
 
         for _ in range(self.num_layers):
