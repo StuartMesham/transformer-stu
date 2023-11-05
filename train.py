@@ -114,7 +114,7 @@ def main(**kwargs):
             params_key,
             {
                 k: jnp.zeros((config.batch_size, max_length), dtype=int)
-                for k in ["inputs_ids", "bidirectional_attention_mask"]
+                for k in ["token_ids", "position_ids", "bidirectional_attention_mask"]
             },
             eval_mode=True,
         )["params"],
@@ -124,7 +124,7 @@ def main(**kwargs):
     def loss_fn(params, state, batch, dropout_key=None, eval_mode=False):
         mask = batch["labels"] != 0
         logits = state.apply_fn(
-            {"params": params}, batch, eval_mode, rngs={"dropout": dropout_key} if not eval_mode else None
+            {"params": params}, batch | {"position_ids": jnp.broadcast_to(jnp.arange(0, batch["token_ids"].shape[1]), batch["token_ids"].shape)}, eval_mode, rngs={"dropout": dropout_key} if not eval_mode else None
         )
         if config.label_smoothing_mass:
             labels = optax.smooth_labels(
@@ -174,8 +174,8 @@ def main(**kwargs):
                 state,
                 batch,
                 dropout_key,
-                sequence_length=batch["inputs_ids"].shape[-1],
-                batch_size=batch["inputs_ids"].shape[0],
+                sequence_length=batch["token_ids"].shape[-1],
+                batch_size=batch["token_ids"].shape[0],
             )
             steps += 1
             total_loss += loss
@@ -194,8 +194,8 @@ def main(**kwargs):
                 batch_loss, batch_tokens = eval_step(
                     state,
                     batch,
-                    sequence_length=batch["inputs_ids"].shape[-1],
-                    batch_size=batch["inputs_ids"].shape[0],
+                    sequence_length=batch["token_ids"].shape[-1],
+                    batch_size=batch["token_ids"].shape[0],
                 )
                 total_loss += batch_loss
                 total_tokens += batch_tokens

@@ -46,11 +46,9 @@ class EmbedTokens(nn.Module):
     emb_size: int
 
     @nn.compact
-    def __call__(self, inputs_ids):
-        tok_emb = nn.Embed(self.vocab_size, self.emb_size)(inputs_ids)
-        pos_emb = nn.Embed(self.max_length, self.emb_size)(
-            jnp.array(jnp.arange(0, inputs_ids.shape[-1]))
-        )
+    def __call__(self, token_ids, position_ids):
+        tok_emb = nn.Embed(self.vocab_size, self.emb_size)(token_ids)
+        pos_emb = nn.Embed(self.max_length, self.emb_size)(position_ids)
         return tok_emb + pos_emb
 
 
@@ -72,13 +70,14 @@ class Transformer(nn.Module):
 
     @nn.compact
     def __call__(self, batch, eval_mode=False):
-        inputs_ids = batch["inputs_ids"]
+        token_ids = batch["token_ids"]
+        position_ids = batch["position_ids"]
 
         attention_mask = make_prefix_lm_mask(
-            inputs_ids, batch["bidirectional_attention_mask"], self.pad_token_idx
+            token_ids, batch["bidirectional_attention_mask"], self.pad_token_idx
         )
 
-        emb = EmbedTokens(self.vocab_size, self.max_length, self.emb_size)(inputs_ids)
+        emb = EmbedTokens(self.vocab_size, self.max_length, self.emb_size)(token_ids, position_ids)
         emb = nn.Dropout(self.dropout_rate, deterministic=eval_mode)(emb)
 
         for _ in range(self.num_layers):

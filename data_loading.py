@@ -38,7 +38,7 @@ def _convert_to_prefix_lm_example(input, target, vocab_size):
     masked_input = tf.squeeze(masked_input.to_tensor(), axis=[0])
 
     return {
-        "inputs_ids": tf.concat((masked_input, target[:-1]), axis=0),
+        "token_ids": tf.concat((masked_input, target[:-1]), axis=0),
         "labels": tf.concat((input[:-1], target), axis=0),
         "bidirectional_attention_mask": tf.concat(
             (tf.ones_like(input), tf.zeros_like(target[:-1])), axis=0
@@ -93,7 +93,7 @@ def bucket(data, batch_size, bucket_boundaries=None, num_length_buckets=5):
         print("finding bucket boundaries")
         lengths = []
         for ex in data.as_numpy_iterator():
-            lengths.append(ex["inputs_ids"].shape[-1])
+            lengths.append(ex["token_ids"].shape[-1])
         bucket_boundaries = _get_bucket_boundaries(lengths, num_length_buckets)
     else:
         num_length_buckets = len(bucket_boundaries)
@@ -101,7 +101,7 @@ def bucket(data, batch_size, bucket_boundaries=None, num_length_buckets=5):
     print(f"bucket boundaries: {bucket_boundaries}")
 
     data = data.bucket_by_sequence_length(
-        element_length_func=lambda elem: tf.shape(elem["inputs_ids"])[0],
+        element_length_func=lambda elem: tf.shape(elem["token_ids"])[0],
         bucket_boundaries=bucket_boundaries,
         pad_to_bucket_boundary=True,
         drop_remainder=False,
