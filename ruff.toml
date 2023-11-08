@@ -1,1 +1,13 @@
 target-version = "py311"
+
+select = ["F", "W", "I", "D", "UP"]
+ignore = ["D100"]
+
+[lint.pydocstyle]
+convention = "google"
+
+[lint.pycodestyle]
+max-doc-length = 120
+
+[isort]
+known-third-party = ["wandb"]

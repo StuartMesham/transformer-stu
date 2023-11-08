@@ -1,10 +1,15 @@
-from orbax.checkpoint import PyTreeCheckpointer
-from transformer import Transformer
 import jax.numpy as jnp
 import tensorflow_text as tf_text
+from orbax.checkpoint import PyTreeCheckpointer
+
+from transformer import Transformer
 
 
 def main():
+    """Runs greedy decoding without an activation cache.
+
+    The activations for all tokens will be re-computed on every forwards pass.
+    """
     checkpointer = PyTreeCheckpointer()
     restored_params = checkpointer.restore("model_saves/70/default")
 

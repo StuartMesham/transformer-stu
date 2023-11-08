@@ -2,6 +2,7 @@ import wandb
 
 
 def main():
+    """Creates a Weights & Biases sweep."""
     sweep_configuration = {
         "name": "machine-translation-sweep-1",
         "program": "train.py",

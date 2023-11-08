@@ -1,11 +1,13 @@
 import functools
 
-import data_loading
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
+
+import data_loading
 
 
 def test_eager_mode_convert_to_prefix_lm_example():
+    """Tests the _convert_to_prefix_lm_example method in tensorflow's eager mode."""
     assert data_loading._EOS_TOKEN == 2
     assert data_loading._MASK_TOKEN == 0
 
@@ -40,6 +42,7 @@ def test_eager_mode_convert_to_prefix_lm_example():
 
 
 def test_graph_mode_convert_to_prefix_lm_example():
+    """Tests the _convert_to_prefix_lm_example method in tensorflow's graph mode."""
     assert data_loading._EOS_TOKEN == 2
     assert data_loading._MASK_TOKEN == 0
 

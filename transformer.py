@@ -1,13 +1,12 @@
-from flax import linen as nn
 import jax.numpy as jnp
+from flax import linen as nn
 from jax import random
+
 import caching
 
 
 def make_prefix_lm_mask(tokens, tokens_has_bidirectional_attention, pad_token_idx):
-    """
-    https://github.com/google-research/t5x/blob/247d329f4da9506c515a564a52ef385146784fb1/t5x/examples/decoder_only/layers.py#L978
-    """
+    """Adapted from: https://github.com/google-research/t5x/blob/247d329f4da9506c515a564a52ef385146784fb1/t5x/examples/decoder_only/layers.py#L978."""
     causal_mask = nn.make_causal_mask(tokens)
 
     bidirectional_mask = nn.make_attention_mask(
@@ -33,6 +32,7 @@ class MLP(nn.Module):
 
     @nn.compact
     def __call__(self, x):
+        """Performs a forward pass of the MLP on input `x`."""
         x = nn.Dense(self.hidden_size)(x)
         x = nn.relu(x)
         x = nn.Dense(self.output_size)(x)
@@ -40,7 +40,10 @@ class MLP(nn.Module):
 
 
 class EmbedTokens(nn.Module):
-    """Transformer token embeddings with learned positional embeddings"""
+    """Transformer token embeddings with learned positional embeddings.
+
+    The final embedding is the element-wise sum of the token and position embeddings.
+    """
 
     vocab_size: int
     max_length: int
@@ -49,6 +52,7 @@ class EmbedTokens(nn.Module):
 
     @nn.compact
     def __call__(self, token_ids, position_ids):
+        """Performs a forward pass of the EmbedTokens layer."""
         tok_emb = nn.Embed(self.vocab_size, self.emb_size)(token_ids)
         pos_emb = nn.Embed(self.max_length, self.emb_size)(position_ids)
         return tok_emb + pos_emb
@@ -73,6 +77,14 @@ class Transformer(nn.Module):
 
     @nn.compact
     def __call__(self, batch, eval_mode=False):
+        """Perform a forwards pass of the Transformer model.
+
+        Args:
+            batch: A dictionary containing the keys: "token_ids", "position_ids" and "bidirectional_attention_mask".
+            eval_mode: If True, dropout is disabled and the attention cache is enabled for efficient decoding.
+                If False, dropout is enabled and the attention cache is disabled. This argument should be set to False
+                during training.
+        """
         token_ids = batch["token_ids"]
         position_ids = batch["position_ids"]
 

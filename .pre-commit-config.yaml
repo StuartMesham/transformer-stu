@@ -3,4 +3,10 @@ repos:
     rev: v0.1.4
     hooks:
       - id: ruff
+        args:
+          - --fix
       - id: ruff-format
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.2.4
+    hooks:
+      - id: codespell

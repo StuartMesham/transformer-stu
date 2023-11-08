@@ -1,9 +1,8 @@
-"""
-from https://github.com/google-research/t5x/blob/c6a517ea5f7aaddf81b7bb8d5baafc014fd78147/t5x/decoding.py#L44C12-L44C12
-"""
+"""Adapted from t5x.decoding module."""
+from collections.abc import Mapping
+
 import flax
 import jax.numpy as jnp
-from typing import Mapping
 
 
 @flax.struct.dataclass

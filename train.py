@@ -5,22 +5,22 @@ from glob import glob
 
 import click
 import jax
+import jax.numpy as jnp
 import optax
+import tensorflow as tf
 import tensorflow_text as tf_text
 import wandb
 from flax.training.early_stopping import EarlyStopping
-from tqdm.auto import tqdm
-from jax import random
-import jax.numpy as jnp
 from flax.training.train_state import TrainState
+from jax import random
 from orbax.checkpoint import (
     CheckpointManager,
     CheckpointManagerOptions,
     PyTreeCheckpointer,
 )
-import tensorflow as tf
+from tqdm.auto import tqdm
 
-from data_loading import get_translation_dataset, bucket
+from data_loading import bucket, get_translation_dataset
 from transformer import Transformer
 
 
@@ -48,6 +48,7 @@ from transformer import Transformer
 @click.option("--train_bucket_boundaries", type=str, required=False)
 @click.option("--validation_bucket_boundaries", type=str, required=False)
 def main(**kwargs):
+    """Performs a single training run."""
     wandb.init(config=kwargs)
     config = wandb.config
 
@@ -150,7 +151,6 @@ def main(**kwargs):
     @partial(jax.jit, static_argnames=["sequence_length", "batch_size"])
     def train_step(state, batch, dropout_key, sequence_length, batch_size):
         """Train for a single step."""
-
         value_and_grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
         (loss, mask), grads = value_and_grad_fn(state.params, state, batch, dropout_key)
         state = state.apply_gradients(grads=grads)
@@ -159,7 +159,6 @@ def main(**kwargs):
     @partial(jax.jit, static_argnames=["sequence_length", "batch_size"])
     def eval_step(state, batch, sequence_length, batch_size):
         """Train for a single step."""
-
         loss, mask = loss_fn(state.params, state, batch, eval_mode=True)
         return loss, mask.sum()
 

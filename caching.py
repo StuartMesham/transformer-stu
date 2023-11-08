@@ -1,3 +1,4 @@
+# ruff: noqa
 """
 Adapted from flax.linen.attention
 Lines 118, 120-123 and 147 were modified to allow us to initialise the cache using bidirectional attention for the

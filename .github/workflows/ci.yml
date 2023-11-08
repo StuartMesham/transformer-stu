@@ -1,0 +1,11 @@
+name: ci
+on: [ push, pull_request ]
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: chartboost/ruff-action@v1
+        with:
+          version: 0.1.4
+      - uses: codespell-project/actions-codespell@v2

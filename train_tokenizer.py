@@ -1,5 +1,5 @@
-import sentencepiece as spm
 import click
+import sentencepiece as spm
 
 
 @click.command()
@@ -7,6 +7,10 @@ import click
 @click.option("--model_prefix", required=True)
 @click.argument("input", nargs=-1)
 def main(**kwargs):
+    """Trains a byte pair encoding tokenizer on the provided input files.
+
+    Note that the `input` argument should be a comma separated list of input files.
+    """
     kwargs["input"] = ",".join(kwargs["input"])
 
     spm.SentencePieceTrainer.train(

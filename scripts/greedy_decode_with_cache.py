@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 import tensorflow_text as tf_text
 from orbax.checkpoint import PyTreeCheckpointer
+
 from scripts.utils import DecodingState
 from transformer import Transformer
 
@@ -10,6 +11,7 @@ EOS_TOKEN_ID = 2
 
 
 def main():
+    """Runs greedy decoding using an activation cache."""
     checkpointer = PyTreeCheckpointer()
     restored_params = checkpointer.restore("model_saves/70/default")
 
