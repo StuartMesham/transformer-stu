@@ -1,6 +1,6 @@
 target-version = "py311"
 
-select = ["F", "W", "I", "D", "UP", "ANN"]
+select = ["F", "W", "I", "D", "UP", "ANN", "TCH", "TD", "FIX", "ICN", "PT"]
 ignore = ["D100", "ANN101"]
 
 [lint.pydocstyle]
