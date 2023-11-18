@@ -19,7 +19,7 @@ jobs:
           python-version: 3.11
 
       - name: Install Dependencies
-        run: pip install -r requirements.txt
+        run: pip install --no-deps tensorflow-text==2.14.0 && pip install -r requirements.txt
 
       - name: Run Tests
         run: python -m pytest

@@ -21,6 +21,7 @@ pip install -r requirements_apple_silicon.txt
 ```
 On any other platform, run:
 ```bash
+pip install --no-deps tensorflow-text==2.14.0
 pip install -r requirements.txt
 ```
 

@@ -1,4 +1,4 @@
 jax[cpu]
-tensorflow-text @ https://github.com/sun1638650145/Libraries-and-Extensions-for-TensorFlow-for-Apple-Silicon/releases/download/v2.13/tensorflow_text-2.13.0-cp311-cp311-macosx_11_0_arm64.whl
+tensorflow-text @ https://github.com/sun1638650145/Libraries-and-Extensions-for-TensorFlow-for-Apple-Silicon/releases/download/v2.14/tensorflow_text-2.14.0-cp311-cp311-macosx_11_0_arm64.whl
 tensorflow-macos
 -r requirements_common.txt
