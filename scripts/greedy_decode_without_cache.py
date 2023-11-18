@@ -5,7 +5,7 @@ from orbax.checkpoint import PyTreeCheckpointer
 from transformer import Transformer
 
 
-def main():
+def main() -> None:
     """Runs greedy decoding without an activation cache.
 
     The activations for all tokens will be re-computed on every forwards pass.

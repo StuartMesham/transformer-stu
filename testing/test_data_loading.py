@@ -6,7 +6,7 @@ import tensorflow as tf
 import data_loading
 
 
-def test_eager_mode_convert_to_prefix_lm_example():
+def test_eager_mode_convert_to_prefix_lm_example() -> None:
     """Tests the _convert_to_prefix_lm_example method in tensorflow's eager mode."""
     assert data_loading._EOS_TOKEN == 2
     assert data_loading._MASK_TOKEN == 3
@@ -39,7 +39,7 @@ def test_eager_mode_convert_to_prefix_lm_example():
     )
 
 
-def test_graph_mode_convert_to_prefix_lm_example():
+def test_graph_mode_convert_to_prefix_lm_example() -> None:
     """Tests the _convert_to_prefix_lm_example method in tensorflow's graph mode."""
     assert data_loading._EOS_TOKEN == 2
     assert data_loading._MASK_TOKEN == 3

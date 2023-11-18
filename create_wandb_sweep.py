@@ -1,7 +1,7 @@
 import wandb
 
 
-def main():
+def main() -> None:
     """Creates a Weights & Biases sweep."""
     sweep_configuration = {
         "name": "machine-translation-sweep-1",

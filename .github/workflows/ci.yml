@@ -21,5 +21,8 @@ jobs:
       - name: Install Dependencies
         run: pip install --no-deps tensorflow-text==2.14.0 && pip install -r requirements.txt
 
+      - name: Run Pytype
+        run: git ls-files "*.py" | xargs pytype --keep-going --jobs=auto
+
       - name: Run Tests
         run: python -m pytest

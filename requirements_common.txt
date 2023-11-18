@@ -7,3 +7,4 @@ wandb
 pytest
 tqdm
 pre-commit
+pytype

@@ -6,7 +6,7 @@ import sentencepiece as spm
 @click.option("--vocab_size", default=8000)
 @click.option("--model_prefix", required=True)
 @click.argument("input", nargs=-1)
-def main(**kwargs):
+def main(**kwargs: bool | int | str | list[str]) -> None:
     """Trains a byte pair encoding tokenizer on the provided input files.
 
     Note that the `input` argument should be a comma separated list of input files.

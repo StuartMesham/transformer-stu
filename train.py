@@ -22,6 +22,7 @@ from tqdm.auto import tqdm
 
 from data_loading import bucket, get_translation_dataset
 from transformer import Transformer
+from type_annotations import Array, PRNGKeyLike, PyTree
 
 
 @click.command()
@@ -47,7 +48,7 @@ from transformer import Transformer
 @click.option("--early_stopping_patience", default=1)
 @click.option("--train_bucket_boundaries", type=str, required=False)
 @click.option("--validation_bucket_boundaries", type=str, required=False)
-def main(**kwargs):
+def main(**kwargs: bool | str | int) -> None:
     """Performs a single training run."""
     wandb.init(config=kwargs)
     config = wandb.config
@@ -122,7 +123,14 @@ def main(**kwargs):
         tx=optax.adamw(lr_schedule),
     )
 
-    def loss_fn(params, state, batch, dropout_key=None, eval_mode=False):
+    def loss_fn(
+        params: PyTree,
+        state: TrainState,
+        batch: dict[str, Array],
+        dropout_key: PRNGKeyLike = None,
+        eval_mode: bool = False,
+    ) -> tuple[Array, Array]:
+        print(type(dropout_key))
         mask = batch["labels"] != 0
         logits = state.apply_fn(
             {"params": params},
@@ -149,7 +157,13 @@ def main(**kwargs):
         return loss.sum(), mask
 
     @partial(jax.jit, static_argnames=["sequence_length", "batch_size"])
-    def train_step(state, batch, dropout_key, sequence_length, batch_size):
+    def train_step(
+        state: PyTree,
+        batch: dict[str, Array],
+        dropout_key: PRNGKeyLike,
+        sequence_length: int,
+        batch_size: int,
+    ) -> tuple[PyTree, Array, Array]:
         """Train for a single step."""
         value_and_grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
         (loss, mask), grads = value_and_grad_fn(state.params, state, batch, dropout_key)
@@ -157,7 +171,9 @@ def main(**kwargs):
         return state, loss, mask.sum()
 
     @partial(jax.jit, static_argnames=["sequence_length", "batch_size"])
-    def eval_step(state, batch, sequence_length, batch_size):
+    def eval_step(
+        state: PyTree, batch: dict[str, Array], sequence_length: int, batch_size: int
+    ) -> tuple[Array, Array]:
         """Train for a single step."""
         loss, mask = loss_fn(state.params, state, batch, eval_mode=True)
         return loss, mask.sum()

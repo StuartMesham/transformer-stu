@@ -3,9 +3,12 @@ from flax import linen as nn
 from jax import random
 
 import caching
+from type_annotations import Array
 
 
-def make_prefix_lm_mask(tokens, tokens_has_bidirectional_attention, pad_token_idx):
+def make_prefix_lm_mask(
+    tokens: Array, tokens_has_bidirectional_attention: Array, pad_token_idx: int
+) -> Array:
     """Adapted from: https://github.com/google-research/t5x/blob/247d329f4da9506c515a564a52ef385146784fb1/t5x/examples/decoder_only/layers.py#L978."""
     causal_mask = nn.make_causal_mask(tokens)
 
@@ -31,7 +34,7 @@ class MLP(nn.Module):
     output_size: int
 
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, x: Array) -> Array:
         """Performs a forward pass of the MLP on input `x`."""
         x = nn.Dense(self.hidden_size)(x)
         x = nn.relu(x)
@@ -51,7 +54,7 @@ class EmbedTokens(nn.Module):
     decode: bool
 
     @nn.compact
-    def __call__(self, token_ids, position_ids):
+    def __call__(self, token_ids: Array, position_ids: Array) -> Array:
         """Performs a forward pass of the EmbedTokens layer."""
         tok_emb = nn.Embed(self.vocab_size, self.emb_size)(token_ids)
         pos_emb = nn.Embed(self.max_length, self.emb_size)(position_ids)
@@ -76,7 +79,7 @@ class Transformer(nn.Module):
     decode: bool = False
 
     @nn.compact
-    def __call__(self, batch, eval_mode=False):
+    def __call__(self, batch: dict[str, Array], eval_mode: bool = False) -> Array:
         """Perform a forwards pass of the Transformer model.
 
         Args:

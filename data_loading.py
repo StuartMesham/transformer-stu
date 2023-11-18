@@ -2,12 +2,15 @@ import functools
 
 import tensorflow as tf
 import tensorflow_text as text
+from tensorflow import Tensor
+from tensorflow.python.ops.gen_dataset_ops import MapDataset
+from tensorflow_text import SentencepieceTokenizer
 
 _MASK_TOKEN = 3
 _EOS_TOKEN = 2
 
 
-def _get_bucket_boundaries(lengths, n):
+def _get_bucket_boundaries(lengths: list[int], n: int) -> list[int]:
     """Divides the dataset set into buckets, each containing an approximately equal number of training samples.
 
     Returns the bucket boundaries (lengths).
@@ -26,7 +29,9 @@ def _get_bucket_boundaries(lengths, n):
     return bin_lengths
 
 
-def _convert_to_prefix_lm_example(input, target, vocab_size):
+def _convert_to_prefix_lm_example(
+    input: Tensor, target: Tensor, vocab_size: int
+) -> dict[str, Tensor]:
     # https://www.tensorflow.org/text/guide/bert_preprocessing_guide#masked_language_model_task
     masked_input, _, _ = text.mask_language_model(
         tf.RaggedTensor.from_tensor(tf.expand_dims(input, axis=0)),
@@ -48,7 +53,9 @@ def _convert_to_prefix_lm_example(input, target, vocab_size):
     }
 
 
-def get_positive_reframing_dataset(file, tokenizer):
+def get_positive_reframing_dataset(
+    file: str, tokenizer: SentencepieceTokenizer
+) -> MapDataset:
     """Creates and returns a tensorflow dataset for the Positive Reframing task.
 
     Args:
@@ -61,7 +68,9 @@ def get_positive_reframing_dataset(file, tokenizer):
             bidirectional_attention_mask.
     """
 
-    def tokenize_input_target_pair(input, target):
+    def tokenize_input_target_pair(
+        input: Tensor, target: Tensor
+    ) -> tuple[Tensor, Tensor]:
         return tokenizer.tokenize(input), tokenizer.tokenize(target)
 
     return (
@@ -80,7 +89,9 @@ def get_positive_reframing_dataset(file, tokenizer):
     )
 
 
-def get_translation_dataset(inputs_file, targets_file, tokenizer):
+def get_translation_dataset(
+    inputs_file: str, targets_file: str, tokenizer: SentencepieceTokenizer
+) -> MapDataset:
     """Creates and returns a tensorflow dataset for the machine translation task.
 
     Note that `inputs_file` and `targets_file` should be "parallel" files. The sentence on line n of `targets_file`
@@ -96,7 +107,9 @@ def get_translation_dataset(inputs_file, targets_file, tokenizer):
             bidirectional_attention_mask.
     """
 
-    def tokenize_input_target_pair(input, target):
+    def tokenize_input_target_pair(
+        input: Tensor, target: Tensor
+    ) -> tuple[Tensor, Tensor]:
         return tokenizer.tokenize(input), tokenizer.tokenize(target)
 
     return (
@@ -117,7 +130,12 @@ def get_translation_dataset(inputs_file, targets_file, tokenizer):
     )
 
 
-def bucket(data, batch_size, bucket_boundaries=None, num_length_buckets=5):
+def bucket(
+    data: MapDataset,
+    batch_size: int,
+    bucket_boundaries: list[int] | None = None,
+    num_length_buckets: int = 5,
+) -> MapDataset:
     """Creates batches of sequences bucketed according to sequence length.
 
     For optimal compute utilisation, we want to minimise the number of padding tokens passed through our model during
