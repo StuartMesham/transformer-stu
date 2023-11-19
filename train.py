@@ -164,7 +164,19 @@ def main(**kwargs: bool | str | int) -> None:
         sequence_length: int,
         batch_size: int,
     ) -> tuple[PyTree, Array, Array]:
-        """Train for a single step."""
+        """Train for a single step.
+
+        Args:
+            state: The state of the model to be trained.
+            batch: A dictionary containing the token_ids, labels and bidirectional_attention_mask to be trained on.
+            dropout_key: The PRNGKey to be used for dropout layers.
+            sequence_length: The sequence length of the batch.
+            batch_size: The number of sequences in the batch.
+
+        Returns:
+            A tuple containing the updated state of the model, the losses for the training step, and the number of
+            non-padding tokens in the batch
+        """
         value_and_grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
         (loss, mask), grads = value_and_grad_fn(state.params, state, batch, dropout_key)
         state = state.apply_gradients(grads=grads)
@@ -174,7 +186,17 @@ def main(**kwargs: bool | str | int) -> None:
     def eval_step(
         state: PyTree, batch: dict[str, Array], sequence_length: int, batch_size: int
     ) -> tuple[Array, Array]:
-        """Train for a single step."""
+        """Eval on a single batch.
+
+        Args:
+            state: The state of the model to be evaluated.
+            batch: A dictionary containing the token_ids, labels and bidirectional_attention_mask to be evaluated on.
+            sequence_length: The sequence length of the batch.
+            batch_size: The number of sequences in the batch.
+
+        Returns:
+            A tuple containing the total loss, and number of non-padding tokens in the batch.
+        """
         loss, mask = loss_fn(state.params, state, batch, eval_mode=True)
         return loss, mask.sum()
 

@@ -9,7 +9,16 @@ from type_annotations import Array
 def make_prefix_lm_mask(
     tokens: Array, tokens_has_bidirectional_attention: Array, pad_token_idx: int
 ) -> Array:
-    """Adapted from: https://github.com/google-research/t5x/blob/247d329f4da9506c515a564a52ef385146784fb1/t5x/examples/decoder_only/layers.py#L978."""
+    """Creates a prefix lm mask.
+
+    Args:
+        tokens: A batch of input tokens.
+        tokens_has_bidirectional_attention: A mask of the same shape as `tokens` with 1 for tokens which should have
+            bidirectional attention and 0 for tokens which should have causal attention.
+        pad_token_idx: The ID of the padding token.
+
+    Adapted from: https://github.com/google-research/t5x/blob/247d329f4da9506c515a564a52ef385146784fb1/t5x/examples/decoder_only/layers.py#L978.
+    """
     causal_mask = nn.make_causal_mask(tokens)
 
     bidirectional_mask = nn.make_attention_mask(
@@ -28,7 +37,7 @@ def make_prefix_lm_mask(
 
 
 class MLP(nn.Module):
-    """Multilayer Perceptron."""
+    """A Multilayer Perceptron with a ReLU activation."""
 
     hidden_size: int
     output_size: int

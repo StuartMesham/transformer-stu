@@ -32,7 +32,37 @@ def _get_bucket_boundaries(lengths: list[int], n: int) -> list[int]:
 def _convert_to_prefix_lm_example(
     input: Tensor, target: Tensor, vocab_size: int
 ) -> dict[str, Tensor]:
-    # https://www.tensorflow.org/text/guide/bert_preprocessing_guide#masked_language_model_task
+    """Converts `input` and `target` into a prefix LM example with BERT-style masking applied to `input`.
+
+    Operates on a single example (rather than a batch of examples).
+
+    The procedure for BERT-style masking is:
+     1. Choose a random 15% of the input tokens.
+     2. For each of the chosen tokens, independently choose one of the actions below with the specified probabilities:
+        - 80% replace the token with a [MASK] token
+        - 10% replace the token with a random token from the vocabulary
+        - 10% leave the token unchanged
+    See the docs for `tensorflow_text.MaskValuesChooser` for more information. See also:
+    https://www.tensorflow.org/text/guide/bert_preprocessing_guide#masked_language_model_task
+
+    The (masked) input and target sequences are concatenated and a `labels` array is generated containing the token ids
+        to be predicted at each position during training. The portion of `labels` corresponding to the `input` sequence
+        contains the un-masked `input` sequence (excluding the end-of-sequence token). The remaining portion of the
+        `labels` array contains the left-shifted autoregressive targets. The model is trained to output the first token
+        of `targets` when it sees the end-of-sequence token of the `input` sequence.
+
+    A `bidirectional_attention_mask` is created containing ones where bidirectional attention should be used and zeros
+        where causal attention should be used.
+
+    Args:
+        input: An input sequence.
+        target: A target sequence.
+        vocab_size: The size of the vocabulary used for tokenisation.
+
+    Returns:
+        A dictionary containing `token_ids`: the combined (masked) input and target sequences, `labels` and
+        `bidirectional_attention_mask`.
+    """
     masked_input, _, _ = text.mask_language_model(
         tf.RaggedTensor.from_tensor(tf.expand_dims(input, axis=0)),
         item_selector=text.RandomItemSelector(
