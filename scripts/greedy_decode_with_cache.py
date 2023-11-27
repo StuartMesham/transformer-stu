@@ -6,7 +6,7 @@ from utils import DecodingState
 
 from transformer import Transformer
 
-MAX_LENGTH = 50
+MAX_LENGTH = 25
 EOS_TOKEN_ID = 2
 
 
@@ -33,10 +33,15 @@ def main() -> None:
         ["i would really like a cup of tea.", "please give me one."]
     )
     batch_size = token_ids_ragged_tensor.shape[0]
-    decoding_start_index = token_ids_ragged_tensor.row_lengths().numpy().max()
-    sequences = token_ids_ragged_tensor.to_tensor(
-        default_value=0, shape=[batch_size, MAX_LENGTH]
-    ).numpy()
+    decoding_start_index = jnp.asarray(
+        token_ids_ragged_tensor.row_lengths().numpy().reshape(batch_size, 1),
+        dtype=jnp.int32,
+    )
+    sequences = jnp.asarray(
+        token_ids_ragged_tensor.to_tensor(
+            default_value=0, shape=[batch_size, MAX_LENGTH]
+        ).numpy()
+    )
 
     batch = {
         "token_ids": sequences,
@@ -51,27 +56,21 @@ def main() -> None:
     )
 
     cache = initial_variables["cache"]
-    cache_mask = jnp.logical_or(
-        sequences > 0, batch["position_ids"] >= decoding_start_index
-    ).reshape(batch_size, 1, 1, MAX_LENGTH)
     cache = jax.tree_map(
         lambda x: dict(
             x,
-            cache_index=jnp.array(decoding_start_index, dtype=jnp.int32),
-            cache_mask=cache_mask,
+            cache_index=decoding_start_index,
         ),
         cache,
         is_leaf=lambda x: "cached_value" in x,
     )
 
-    sequences[
-        jnp.arange(batch_size), token_ids_ragged_tensor.row_lengths().numpy()
-    ] = logits.argmax(axis=2)[
-        jnp.arange(batch_size), token_ids_ragged_tensor.row_lengths().numpy() - 1
-    ]
+    sequences = sequences.at[jnp.arange(batch_size), decoding_start_index.ravel()].set(
+        logits.argmax(axis=2)[jnp.arange(batch_size), decoding_start_index.ravel() - 1]
+    )
 
     decode_state = DecodingState(
-        cur_index=token_ids_ragged_tensor.row_lengths().numpy().reshape(batch_size, -1),
+        cur_index=decoding_start_index,
         sequences=sequences,
         cache=cache,
     )
@@ -109,17 +108,17 @@ def main() -> None:
         )
 
         return DecodingState(
-            cur_index=state.cur_index + 1,
+            cur_index=jnp.minimum(state.cur_index + 1, MAX_LENGTH - 1),
             sequences=new_sequences,
             cache=new_cache,
         )
 
     def loop_cond_func(state: DecodingState) -> jax.Array:
-        return ~jnp.logical_or(
-            jnp.any(state.cur_index >= MAX_LENGTH - 1),
-            jnp.all(
-                jnp.sum(state.sequences == EOS_TOKEN_ID, axis=-1, keepdims=True) >= 2
-            ),
+        return ~jnp.all(
+            jnp.logical_or(
+                state.cur_index >= MAX_LENGTH - 1,
+                jnp.sum(state.sequences == EOS_TOKEN_ID, axis=-1, keepdims=True) >= 2,
+            )
         )
 
     final_state = jax.lax.while_loop(loop_cond_func, loop_body_func, decode_state)

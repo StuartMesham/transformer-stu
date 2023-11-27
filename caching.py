@@ -1,8 +1,6 @@
 # ruff: noqa
 """
 Adapted from flax.linen.attention
-Lines 118, 120-123 and 147 were modified to allow us to initialise the cache using bidirectional attention for the
-    prefix when using a decoder-only prefix-lm.
 """
 
 import functools
@@ -131,7 +129,6 @@ class MultiHeadDotProductAttention(Module):
             cached_value = self.variable("cache", "cached_value", lambda x: x, value)
             if is_initialized:
                 cache_index = self.variable("cache", "cache_index")
-                cache_mask = self.variable("cache", "cache_mask")
 
                 (
                     *batch_dims,
@@ -149,22 +146,26 @@ class MultiHeadDotProductAttention(Module):
                     )
                 # update key, value caches with our new 1d spatial slices
                 cur_index = cache_index.value
-                indices = (0,) * len(batch_dims) + (cur_index, 0, 0)
-                key = lax.dynamic_update_slice(cached_key.value, key, indices)
-                value = lax.dynamic_update_slice(cached_value.value, value, indices)
+                indices = tuple(jnp.arange(batch_dim) for batch_dim in batch_dims) + (
+                    cur_index.ravel(),
+                )
+                key = cached_key.value.at[indices].set(
+                    key.reshape(tuple(batch_dims) + (num_heads, depth_per_head))
+                )
+                value = cached_value.value.at[indices].set(
+                    value.reshape(tuple(batch_dims) + (num_heads, depth_per_head))
+                )
                 cached_key.value = key
                 cached_value.value = value
-                cache_index.value = cache_index.value + 1
+                cache_index.value = jnp.minimum(max_length - 1, cache_index.value + 1)
                 # causal mask for cached decoder self-attention:
                 # our single query position should only attend to those key
                 # positions that have already been generated and cached,
                 # not the remaining zero elements.
                 mask = combine_masks(
                     mask,
-                    cache_mask.value,
-                    jnp.broadcast_to(
-                        jnp.arange(max_length) <= cur_index,
-                        tuple(batch_dims) + (1, 1, max_length),
+                    (jnp.arange(max_length) <= cur_index).reshape(
+                        tuple(batch_dims) + (1, 1, max_length)
                     ),
                 )
 
