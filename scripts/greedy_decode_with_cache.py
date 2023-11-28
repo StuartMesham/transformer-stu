@@ -5,6 +5,7 @@ from orbax.checkpoint import PyTreeCheckpointer
 from utils import DecodingState
 
 from transformer import Transformer
+from type_annotations import Array, PyTree
 
 MAX_LENGTH = 25
 EOS_TOKEN_ID = 2
@@ -75,7 +76,7 @@ def main() -> None:
         cache=cache,
     )
 
-    def loop_body_func(state: DecodingState) -> DecodingState:
+    def tokens_to_logits(state: DecodingState) -> tuple[Array, PyTree]:
         batch = {
             "token_ids": state.sequences[
                 jnp.arange(batch_size), state.cur_index.ravel()
@@ -89,7 +90,10 @@ def main() -> None:
             mutable=["cache"],
             eval_mode=True,
         )
-        new_cache = new_vars["cache"]
+        return logits, new_vars["cache"]
+
+    def loop_body_func(state: DecodingState) -> DecodingState:
+        logits, new_cache = tokens_to_logits(state)
 
         # Add current sampled tokens to recorded sequences.
         next_tokens = logits.argmax(axis=2)
