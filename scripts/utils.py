@@ -27,3 +27,23 @@ class DecodingState:
     cur_index: jnp.ndarray
     sequences: jnp.ndarray
     cache: Mapping[str, jnp.ndarray]
+
+
+@flax.struct.dataclass
+class BeamDecodingState(DecodingState):
+    sequence_log_probs: jnp.ndarray
+    sequence_is_terminated: jnp.ndarray
+    sequence_lengths: jnp.ndarray
+
+
+def brevity_penalty(alpha: float, length: int) -> jnp.ndarray:
+    """Brevity penalty function for beam search penalizing short sequences.
+
+    Args:
+      alpha: float: brevity-penalty scaling parameter.
+      length: int: length of considered sequence.
+
+    Returns:
+      Brevity penalty score as jax scalar.
+    """
+    return jnp.power(((5.0 + length) / 6.0), alpha)
