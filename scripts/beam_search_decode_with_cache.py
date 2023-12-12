@@ -151,7 +151,7 @@ def main() -> None:
             state.sequence_log_probs.reshape(batch_size * BEAMS, 1, 1) + log_probs
         )
 
-        scores = new_sequence_log_probs * brevity_penalty(
+        scores = new_sequence_log_probs / brevity_penalty(
             BREVITY_PENALTY_ALPHA, new_sequence_lengths
         ).reshape(-1, 1, 1)
 
