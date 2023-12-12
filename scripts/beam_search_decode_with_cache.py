@@ -7,10 +7,8 @@ from utils import BeamDecodingState, DecodingState, brevity_penalty
 from transformer import Transformer
 from type_annotations import Array, PyTree
 
-BEAMS = 20
 MAX_LENGTH = 25
 EOS_TOKEN_ID = 2
-BREVITY_PENALTY_ALPHA = 0.6
 
 NEG_INF = jnp.array(-1.0e7)
 
@@ -67,58 +65,31 @@ def main() -> None:
         ).numpy()
     )
 
-    batch = {
-        "token_ids": sequences,
-        "position_ids": jnp.broadcast_to(
-            jnp.arange(0, sequences.shape[1]), sequences.shape
-        ),
-        "bidirectional_attention_mask": sequences != 0,
-    }
+    def sequences_to_logits(sequences):
+        batch = {
+            "token_ids": sequences,
+            "position_ids": jnp.broadcast_to(
+                jnp.arange(0, sequences.shape[1]), sequences.shape
+            ),
+            "bidirectional_attention_mask": sequences != 0,
+        }
 
-    logits, initial_variables = transformer.apply(
-        {"params": restored_params}, batch, eval_mode=True, mutable=True
-    )
+        logits, initial_variables = transformer.apply(
+            {"params": restored_params}, batch, eval_mode=True, mutable=True
+        )
 
-    cache = initial_variables["cache"]
-    cache = jax.tree_map(
-        lambda x: dict(
-            x,
-            cache_index=decoding_start_index,
-        ),
-        cache,
-        is_leaf=lambda x: "cached_value" in x,
-    )
+        cache = initial_variables["cache"]
 
-    # beam search starts here
+        cache = jax.tree_map(
+            lambda x: dict(
+                x,
+                cache_index=decoding_start_index,
+            ),
+            cache,
+            is_leaf=lambda x: "cached_value" in x,
+        )
 
-    log_probs = jax.nn.log_softmax(logits)
-    topk_log_probs, topk_indices = jax.lax.top_k(
-        log_probs.at[jnp.arange(batch_size), decoding_start_index.ravel() - 1].get(),
-        k=BEAMS,
-    )
-
-    expanded_sequences = add_beam_dim(sequences, BEAMS)
-    expanded_decoding_start_index = add_beam_dim(decoding_start_index, BEAMS)
-
-    sequence_log_probs = topk_log_probs
-
-    batch_indices = jnp.arange(batch_size * BEAMS) // BEAMS
-    beam_indices = jnp.arange(batch_size * BEAMS) % BEAMS
-
-    expanded_sequences = expanded_sequences.at[
-        batch_indices, beam_indices, expanded_decoding_start_index.ravel()
-    ].set(topk_indices.ravel())
-
-    cache = jax.tree_map(lambda x: flatten_beam_dim(add_beam_dim(x, BEAMS)), cache)
-
-    decode_state = BeamDecodingState(
-        cur_index=flatten_beam_dim(expanded_decoding_start_index),
-        sequences=flatten_beam_dim(expanded_sequences),
-        cache=cache,
-        sequence_log_probs=flatten_beam_dim(sequence_log_probs),
-        sequence_is_terminated=topk_indices.ravel() == EOS_TOKEN_ID,
-        sequence_lengths=jnp.full(batch_size * BEAMS, 1),
-    )
+        return logits, cache
 
     def tokens_to_logits(state: DecodingState) -> tuple[Array, PyTree]:
         batch = {
@@ -138,47 +109,105 @@ def main() -> None:
         )
         return logits, new_vars["cache"]
 
+    output_sequences, output_scores = beam_search(
+        sequences, decoding_start_index, sequences_to_logits, tokens_to_logits
+    )
+
+    print(jnp.array_str(flatten_beam_dim(output_sequences), max_line_width=59999))
+
+    for decoded_string in tokenizer.detokenize(
+        flatten_beam_dim(output_sequences)
+    ).numpy():
+        print(decoded_string.decode())
+    print()
+
+
+def beam_search(
+    sequences,
+    decoding_start_index,
+    sequences_to_logits,
+    tokens_to_logits,
+    beams=20,
+    alpha=0.6,
+):
+    max_length = sequences.shape[1]
+
+    logits, cache = sequences_to_logits(sequences)
+
+    batch_size = sequences.shape[0]
+
+    # beam search starts here
+
+    log_probs = jax.nn.log_softmax(logits)
+    topk_log_probs, topk_indices = jax.lax.top_k(
+        log_probs.at[jnp.arange(batch_size), decoding_start_index.ravel() - 1].get(),
+        k=beams,
+    )
+
+    expanded_sequences = add_beam_dim(sequences, beams)
+    expanded_decoding_start_index = add_beam_dim(decoding_start_index, beams)
+
+    sequence_log_probs = topk_log_probs
+
+    batch_indices = jnp.arange(batch_size * beams) // beams
+    beam_indices = jnp.arange(batch_size * beams) % beams
+
+    expanded_sequences = expanded_sequences.at[
+        batch_indices, beam_indices, expanded_decoding_start_index.ravel()
+    ].set(topk_indices.ravel())
+
+    cache = jax.tree_map(lambda x: flatten_beam_dim(add_beam_dim(x, beams)), cache)
+
+    decode_state = BeamDecodingState(
+        cur_index=flatten_beam_dim(expanded_decoding_start_index),
+        sequences=flatten_beam_dim(expanded_sequences),
+        cache=cache,
+        sequence_log_probs=flatten_beam_dim(sequence_log_probs),
+        sequence_is_terminated=topk_indices.ravel() == EOS_TOKEN_ID,
+        sequence_lengths=jnp.full(batch_size * beams, 1),
+    )
+
     def loop_body_func(state: BeamDecodingState) -> BeamDecodingState:
         logits, new_cache = tokens_to_logits(state)
         log_probs = jax.nn.log_softmax(logits)
-        log_probs *= ~state.sequence_is_terminated.reshape(batch_size * BEAMS, 1, 1)
+        log_probs *= ~state.sequence_is_terminated.reshape(batch_size * beams, 1, 1)
         new_sequence_lengths = (
             state.sequence_is_terminated * state.sequence_lengths
             + ~state.sequence_is_terminated
-            * jnp.minimum(state.cur_index.ravel() + 1, MAX_LENGTH - 1)
+            * jnp.minimum(state.cur_index.ravel() + 1, max_length - 1)
         )
         new_sequence_log_probs = (
-            state.sequence_log_probs.reshape(batch_size * BEAMS, 1, 1) + log_probs
+            state.sequence_log_probs.reshape(batch_size * beams, 1, 1) + log_probs
         )
 
         scores = new_sequence_log_probs / brevity_penalty(
-            BREVITY_PENALTY_ALPHA, new_sequence_lengths
+            alpha, new_sequence_lengths
         ).reshape(-1, 1, 1)
 
         vocab_size = log_probs.shape[-1]
 
         mask = jnp.tile(
-            jnp.array([0.0] + [NEG_INF] * (vocab_size - 1)), [batch_size * BEAMS, 1, 1]
+            jnp.array([0.0] + [NEG_INF] * (vocab_size - 1)), [batch_size * beams, 1, 1]
         )
 
         scores += state.sequence_is_terminated.reshape(-1, 1, 1) * mask
 
         _, topk_indices = jax.lax.top_k(
             (scores).reshape(batch_size, -1),
-            BEAMS,
+            beams,
         )
         new_sequence_log_probs = new_sequence_log_probs.at[
-            jnp.arange(batch_size * BEAMS), 1, topk_indices.ravel()
+            jnp.arange(batch_size * beams), 1, topk_indices.ravel()
         ].get()
         topk_beam_indices = topk_indices // vocab_size
         topk_vocab_indices = topk_indices % vocab_size
 
-        sequences = unflatten_beam_dim(state.sequences, BEAMS)
+        sequences = unflatten_beam_dim(state.sequences, beams)
         sequences = gather_beams(sequences, batch_indices, topk_beam_indices.ravel())
 
         gathered_sequence_is_terminated = flatten_beam_dim(
             gather_beams(
-                unflatten_beam_dim(state.sequence_is_terminated, BEAMS),
+                unflatten_beam_dim(state.sequence_is_terminated, beams),
                 batch_indices,
                 topk_beam_indices.ravel(),
             )
@@ -193,7 +222,7 @@ def main() -> None:
         new_cache = jax.tree_map(
             lambda x: flatten_beam_dim(
                 gather_beams(
-                    unflatten_beam_dim(x, BEAMS),
+                    unflatten_beam_dim(x, beams),
                     batch_indices,
                     topk_beam_indices.ravel(),
                 )
@@ -210,14 +239,14 @@ def main() -> None:
         # print('\n'.join([s.decode() for s in tokenizer.detokenize(new_sequences).numpy()]))
 
         return BeamDecodingState(
-            cur_index=jnp.minimum(state.cur_index + 1, MAX_LENGTH - 1),
+            cur_index=jnp.minimum(state.cur_index + 1, max_length - 1),
             sequences=new_sequences,
             cache=new_cache,
             sequence_log_probs=new_sequence_log_probs,
             sequence_is_terminated=jnp.logical_or(
                 new_sequence_is_terminated,
-                jnp.minimum(state.cur_index + 1, MAX_LENGTH - 1).ravel()
-                == MAX_LENGTH - 1,
+                jnp.minimum(state.cur_index + 1, max_length - 1).ravel()
+                == max_length - 1,
             ),
             sequence_lengths=new_sequence_lengths,
         )
@@ -225,7 +254,7 @@ def main() -> None:
     def loop_cond_func(state: BeamDecodingState) -> jax.Array:
         return ~jnp.all(
             jnp.logical_or(
-                state.cur_index >= MAX_LENGTH - 1,
+                state.cur_index >= max_length - 1,
                 jnp.expand_dims(state.sequence_is_terminated, axis=1),
             )
         )
@@ -233,9 +262,9 @@ def main() -> None:
     # with jax.disable_jit():
     final_state = jax.lax.while_loop(loop_cond_func, loop_body_func, decode_state)
 
-    for decoded_string in tokenizer.detokenize(final_state.sequences).numpy():
-        print(decoded_string.decode())
-    print()
+    return unflatten_beam_dim(final_state.sequences, beams), unflatten_beam_dim(
+        final_state.sequence_log_probs, beams
+    )
 
 
 if __name__ == "__main__":
