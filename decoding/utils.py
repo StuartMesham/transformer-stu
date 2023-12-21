@@ -31,6 +31,14 @@ class DecodingState:
 
 @flax.struct.dataclass
 class BeamDecodingState(DecodingState):
+    """Holds decoding state data for beam search.
+
+    Attributes:
+        sequence_log_probs: The log probs of each of the decoded sequences.
+        sequence_is_terminated: Whether each of the decoded sequences contains an EOS token or has reached max length.
+        sequence_lengths: The length (excluding padding) of the decoded sequences.
+    """
+
     sequence_log_probs: jnp.ndarray
     sequence_is_terminated: jnp.ndarray
     sequence_lengths: jnp.ndarray

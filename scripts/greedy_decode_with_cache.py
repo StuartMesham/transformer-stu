@@ -2,8 +2,8 @@ import jax
 import jax.numpy as jnp
 import tensorflow_text as tf_text
 from orbax.checkpoint import PyTreeCheckpointer
-from utils import DecodingState
 
+from decoding.utils import DecodingState
 from transformer import Transformer
 from type_annotations import Array, PyTree
 

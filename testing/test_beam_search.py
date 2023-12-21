@@ -1,19 +1,17 @@
-import jax
 import numpy as np
 from jax import numpy as jnp
 
-from scripts.beam_search_decode_with_cache import beam_search
-from scripts.utils import DecodingState
+from decoding.beam_search import beam_search
+from decoding.utils import DecodingState
 from type_annotations import Array, PyTree
 
 
 def test_beam_search() -> None:
+    """Test the beam search function."""
     # Toy problem, we have 4 states, A, B, START, END, (plus PAD).
     # Scores are given by a first-order Markov model.
     # PAD doesn't matter for this test, but part of the contract for beam_search is giving the PAD token id 0.
-    states = ["PAD", "A", "B", "START-", "-END"]
-    num_states = len(states)
-    decode_length = 7
+    # states = ["PAD", "A", "B", "START-", "-END"]
 
     # Edge potentials (written inside edges for diagonals):
     #            1      -1     1      -1
@@ -44,7 +42,7 @@ def test_beam_search() -> None:
 
     edge_potentials = jnp.asarray(edge_potentials)
 
-    def sequences_to_logits(sequences):
+    def sequences_to_logits(sequences: Array) -> tuple[Array, PyTree]:
         logits = (
             edge_potentials.at[
                 jnp.arange(sequences.size) % sequences.shape[1], sequences.ravel()
@@ -66,13 +64,47 @@ def test_beam_search() -> None:
         )
         return logits, {}
 
-    with jax.disable_jit():
-        outputs = beam_search(
-            jnp.array([[3, 1, 0, 0, 0, 0, 0], [3, 2, 0, 0, 0, 0, 0]]),
-            decoding_start_index=jnp.array([[2], [1]]),
-            sequences_to_logits=sequences_to_logits,
-            tokens_to_logits=tokens_to_logits,
-            eos_token_id=4,
-            beams=2,
-        )
-    print("\n", outputs[0], "\n", outputs[1])
+    outputs = beam_search(
+        jnp.array([[3, 1, 0, 0, 0, 0, 0], [3, 2, 0, 0, 0, 0, 0]]),
+        decoding_start_index=jnp.array([[2], [1]]),
+        sequences_to_logits=sequences_to_logits,
+        tokens_to_logits=tokens_to_logits,
+        eos_token_id=4,
+        beams=2,
+    )
+
+    assert jnp.array_equal(
+        outputs[0],
+        jnp.array(
+            [
+                [[3, 1, 1, 2, 2, 1, 4], [3, 1, 1, 2, 2, 2, 4]],
+                [[3, 2, 2, 1, 1, 2, 4], [3, 2, 2, 1, 1, 1, 4]],
+            ]
+        ),
+    )
+
+    assert jnp.array_equal(
+        outputs[1], jnp.array([[-0.5077122, -2.5077124], [-3.152109, -7.127656]])
+    )
+
+    # greedy decode
+    outputs = beam_search(
+        jnp.array([[3, 2, 0, 0, 0, 0, 0], [3, 2, 0, 0, 0, 0, 0]]),
+        decoding_start_index=jnp.array([[2], [1]]),
+        sequences_to_logits=sequences_to_logits,
+        tokens_to_logits=tokens_to_logits,
+        eos_token_id=4,
+        beams=1,
+    )
+
+    assert jnp.array_equal(
+        outputs[0],
+        jnp.array(
+            [
+                [[3, 2, 2, 1, 1, 2, 4]],
+                [[3, 1, 1, 2, 2, 1, 4]],
+            ]
+        ),
+    )
+
+    assert jnp.array_equal(outputs[1], jnp.array([[-0.38325977], [-1.1521089]]))
