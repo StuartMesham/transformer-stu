@@ -8,6 +8,9 @@ from type_annotations import Array, PyTree
 
 def test_beam_search() -> None:
     """Test the beam search function."""
+    # Adapted from:
+    # https://github.com/google-research/t5x/blob/f54468cd2d9cee39aa3e0a540a9ede0cede8c997/t5x/decoding_test.py#L820
+
     # Toy problem, we have 4 states, A, B, START, END, (plus PAD).
     # Scores are given by a first-order Markov model.
     # PAD doesn't matter for this test, but part of the contract for beam_search is giving the PAD token id 0.
@@ -64,6 +67,7 @@ def test_beam_search() -> None:
         )
         return logits, {}
 
+    # test decode with beam size of 2
     outputs = beam_search(
         jnp.array([[3, 1, 0, 0, 0, 0, 0], [3, 2, 0, 0, 0, 0, 0]]),
         decoding_start_index=jnp.array([[2], [1]]),
@@ -85,6 +89,152 @@ def test_beam_search() -> None:
 
     assert jnp.array_equal(
         outputs[1], jnp.array([[-0.5077122, -2.5077124], [-3.152109, -7.127656]])
+    )
+
+    # test termination before max_seq_length is reached
+    outputs = beam_search(
+        jnp.array(
+            [[3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], [3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
+        ),
+        decoding_start_index=jnp.array([[2], [1]]),
+        sequences_to_logits=sequences_to_logits,
+        tokens_to_logits=tokens_to_logits,
+        eos_token_id=4,
+        beams=2,
+    )
+
+    assert jnp.array_equal(
+        outputs[0],
+        jnp.array(
+            [
+                [[3, 1, 1, 2, 2, 1, 4, 0, 0, 0, 0], [3, 1, 1, 2, 2, 2, 4, 0, 0, 0, 0]],
+                [[3, 2, 2, 1, 1, 2, 4, 0, 0, 0, 0], [3, 2, 2, 1, 1, 1, 4, 0, 0, 0, 0]],
+            ]
+        ),
+    )
+
+    assert jnp.array_equal(
+        outputs[1], jnp.array([[-0.5077122, -2.5077124], [-3.152109, -7.127656]])
+    )
+
+    # test termination by reaching max_seq_length before EOS token
+    outputs = beam_search(
+        jnp.array([[3, 1, 0, 0], [3, 2, 0, 0]]),
+        decoding_start_index=jnp.array([[2], [1]]),
+        sequences_to_logits=sequences_to_logits,
+        tokens_to_logits=tokens_to_logits,
+        eos_token_id=4,
+        beams=2,
+    )
+
+    assert jnp.array_equal(
+        outputs[0],
+        jnp.array(
+            [
+                [[3, 1, 1, 2], [3, 1, 1, 1]],
+                [[3, 2, 2, 1], [3, 2, 2, 2]],
+            ]
+        ),
+    )
+
+    assert jnp.array_equal(
+        outputs[1], jnp.array([[-0.2538561, -2.2538562], [-2.8982527, -6.8738003]])
+    )
+
+    # situation where one sequence reaches EOS token before the other
+    outputs = beam_search(
+        jnp.array([[3, 1, 1, 2, 2, 0, 0, 0], [3, 2, 0, 0, 0, 0, 0, 0]]),
+        decoding_start_index=jnp.array([[5], [1]]),
+        sequences_to_logits=sequences_to_logits,
+        tokens_to_logits=tokens_to_logits,
+        eos_token_id=4,
+        beams=2,
+    )
+
+    assert jnp.array_equal(
+        outputs[0],
+        jnp.array(
+            [
+                [[3, 1, 1, 2, 2, 1, 4, 0], [3, 1, 1, 2, 2, 2, 4, 0]],
+                [[3, 2, 2, 1, 1, 2, 4, 0], [3, 2, 2, 1, 1, 1, 4, 0]],
+            ]
+        ),
+    )
+
+    assert jnp.array_equal(
+        outputs[1], jnp.array([[-0.12692805, -2.126928], [-3.152109, -7.127656]])
+    )
+
+    # situation where one sequence reaches max_seq_length before the other
+    outputs = beam_search(
+        jnp.array([[3, 1, 1, 2, 0, 0], [3, 2, 0, 0, 0, 0]]),
+        decoding_start_index=jnp.array([[4], [1]]),
+        sequences_to_logits=sequences_to_logits,
+        tokens_to_logits=tokens_to_logits,
+        eos_token_id=4,
+        beams=2,
+    )
+
+    assert jnp.array_equal(
+        outputs[0],
+        jnp.array(
+            [
+                [[3, 1, 1, 2, 2, 1], [3, 1, 1, 2, 2, 2]],
+                [[3, 2, 2, 1, 1, 2], [3, 2, 2, 1, 1, 1]],
+            ]
+        ),
+    )
+
+    assert jnp.array_equal(
+        outputs[1], jnp.array([[-0.2538561, -2.2538562], [-3.152109, -7.127656]])
+    )
+
+    # situation where one sequence reaches max_seq_length on the first decoded token
+    outputs = beam_search(
+        jnp.array([[3, 1, 1, 2, 2, 0], [3, 2, 0, 0, 0, 0]]),
+        decoding_start_index=jnp.array([[5], [1]]),
+        sequences_to_logits=sequences_to_logits,
+        tokens_to_logits=tokens_to_logits,
+        eos_token_id=4,
+        beams=2,
+    )
+
+    assert jnp.array_equal(
+        outputs[0],
+        jnp.array(
+            [
+                [[3, 1, 1, 2, 2, 1], [3, 1, 1, 2, 2, 2]],
+                [[3, 2, 2, 1, 1, 2], [3, 2, 2, 1, 1, 1]],
+            ]
+        ),
+    )
+
+    assert jnp.array_equal(
+        outputs[1], jnp.array([[-0.12692805, -2.126928], [-3.152109, -7.127656]])
+    )
+
+    # situation where one sequence reaches EOS token on the first decoded token
+    outputs = beam_search(
+        jnp.array([[3, 1, 1, 2, 2, 1, 0, 0], [3, 2, 0, 0, 0, 0, 0, 0]]),
+        decoding_start_index=jnp.array([[6], [1]]),
+        sequences_to_logits=sequences_to_logits,
+        tokens_to_logits=tokens_to_logits,
+        eos_token_id=4,
+        beams=2,
+    )
+
+    assert jnp.array_equal(
+        outputs[0],
+        jnp.array(
+            [
+                [[3, 1, 1, 2, 2, 1, 4, 0], [3, 1, 1, 2, 2, 1, 0, 0]],
+                [[3, 2, 2, 1, 1, 2, 4, 0], [3, 2, 2, 1, 1, 1, 4, 0]],
+            ]
+        ),
+    )
+
+    assert jnp.array_equal(
+        outputs[1], jnp.array([[0.0, -1.0000002e07], [-3.152109, -7.127656]])
     )
 
     # greedy decode

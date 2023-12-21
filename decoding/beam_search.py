@@ -139,13 +139,17 @@ def beam_search(
         batch_indices, beam_indices, expanded_decoding_start_index.ravel()
     ].set(topk_indices.ravel())
 
+    new_decoding_start_index = flatten_beam_dim(expanded_decoding_start_index)
+
     decode_state = BeamDecodingState(
-        cur_index=flatten_beam_dim(expanded_decoding_start_index),
+        cur_index=new_decoding_start_index,
         sequences=flatten_beam_dim(expanded_sequences),
         cache=jax.tree_map(lambda x: flatten_beam_dim(_add_beam_dim(x, beams)), cache),
         sequence_log_probs=flatten_beam_dim(topk_log_probs),
-        sequence_is_terminated=topk_indices.ravel()
-        == eos_token_id,  # TODO: add condition to check max seq length
+        sequence_is_terminated=jnp.logical_or(
+            topk_indices.ravel() == eos_token_id,
+            new_decoding_start_index.ravel() == max_length - 1,
+        ),
         sequence_lengths=jnp.full(batch_size * beams, 1),
     )
 
@@ -215,7 +219,7 @@ def beam_search(
         # add the next decoded token to each (un-terminated) sequence
         # flatten the beam dimension
         new_sequences = flatten_beam_dim(
-            sequences.at[batch_indices, beam_indices, state.cur_index.ravel() + 1].set(
+            sequences.at[batch_indices, beam_indices, state.cur_index.ravel() + 1].add(
                 topk_vocab_indices.ravel() * ~new_sequence_is_terminated.ravel()
             )
         )
