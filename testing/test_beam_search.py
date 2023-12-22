@@ -215,7 +215,7 @@ def test_beam_search() -> None:
 
     # situation where one sequence reaches EOS token on the first decoded token
     outputs = beam_search(
-        jnp.array([[3, 1, 1, 2, 2, 1, 0, 0], [3, 2, 0, 0, 0, 0, 0, 0]]),
+        jnp.array([[3, 1, 1, 2, 2, 1, 0, 0], [3, 2, 0, 0, 100, 0, 0, 0]]),
         decoding_start_index=jnp.array([[6], [1]]),
         sequences_to_logits=sequences_to_logits,
         tokens_to_logits=tokens_to_logits,

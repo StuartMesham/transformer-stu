@@ -219,7 +219,7 @@ def beam_search(
         # add the next decoded token to each (un-terminated) sequence
         # flatten the beam dimension
         new_sequences = flatten_beam_dim(
-            sequences.at[batch_indices, beam_indices, state.cur_index.ravel() + 1].add(
+            sequences.at[batch_indices, beam_indices, state.cur_index.ravel() + 1].set(
                 topk_vocab_indices.ravel() * ~new_sequence_is_terminated.ravel()
             )
         )
