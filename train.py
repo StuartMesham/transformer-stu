@@ -22,6 +22,7 @@ from orbax.checkpoint import (
 from tqdm.auto import tqdm
 
 from data_loading import bucket, get_translation_dataset
+from decoding.beam_search import beam_search
 from decoding.greedy import greedy_search
 from decoding.utils import DecodingState
 from training.utils import calc_bleu
@@ -235,7 +236,7 @@ def main(**kwargs: bool | str | int) -> None:
     )
 
     @partial(jax.jit, static_argnames=["sequence_length", "batch_size"])
-    def autoregressive_inference_step(
+    def greedy_autoregressive_inference_step(
         state: PyTree, batch: dict[str, Array], sequence_length: int, batch_size: int
     ) -> tuple[Array, Array, Any]:
         """Autoregressive eval on a single batch.
@@ -323,6 +324,87 @@ def main(**kwargs: bool | str | int) -> None:
 
         return predicted_tokens, expected_tokens, (predicted_tokens == 2).sum()
 
+    @partial(jax.jit, static_argnames=["sequence_length", "batch_size"])
+    def beam_autoregressive_inference_step(
+        state: PyTree, batch: dict[str, Array], sequence_length: int, batch_size: int
+    ) -> tuple[Array, Array, Any]:
+        """Autoregressive eval on a single batch.
+
+        Args:
+            state: The state of the model to be evaluated.
+            batch: A dictionary containing the token_ids, labels and bidirectional_attention_mask to be evaluated on.
+            sequence_length: The sequence length of the batch.
+            batch_size: The number of sequences in the batch.
+
+        Returns:
+            A tuple containing the total loss, and number of non-padding tokens in the batch.
+        """
+
+        def sequences_to_logits(sequences: Array) -> tuple[Array, PyTree]:
+            _batch = {
+                "token_ids": sequences,
+                "position_ids": jnp.broadcast_to(
+                    jnp.arange(0, sequences.shape[1]), sequences.shape
+                ),
+                "bidirectional_attention_mask": sequences != 0,
+            }
+
+            logits, initial_variables = transformer_decode_mode.apply(
+                {"params": state.params}, _batch, eval_mode=True, mutable=True
+            )
+
+            cache = initial_variables["cache"]
+
+            cache = jax.tree_map(
+                lambda x: dict(
+                    x,
+                    cache_index=batch["decoding_start_index"].reshape(-1, 1),
+                ),
+                cache,
+                is_leaf=lambda x: "cached_value" in x,
+            )
+
+            return logits, cache
+
+        def tokens_to_logits(decoding_state: DecodingState) -> tuple[Array, PyTree]:
+            batch = {
+                "token_ids": decoding_state.sequences[
+                    jnp.arange(decoding_state.sequences.shape[0]),
+                    decoding_state.cur_index.ravel(),
+                ].reshape(decoding_state.sequences.shape[0], 1),
+                "position_ids": decoding_state.cur_index,
+                "bidirectional_attention_mask": jnp.zeros(
+                    (decoding_state.sequences.shape[0], 1), dtype="int32"
+                ),
+            }
+            logits, new_vars = transformer_decode_mode.apply(
+                {"params": state.params, "cache": decoding_state.cache},
+                batch,
+                mutable=["cache"],
+                eval_mode=True,
+            )
+            return logits, new_vars["cache"]
+
+        # output_sequences has dimensions [batch_size, beam_size, max_seq_length]
+        output_sequences, output_scores = beam_search(
+            batch["token_ids"],
+            batch["decoding_start_index"].reshape(-1, 1),
+            sequences_to_logits,
+            tokens_to_logits,
+            2,
+        )
+
+        decodes = output_sequences[:, 0]  # return the top sequence from each beam
+
+        output_mask = batch["decoding_start_index"].reshape(-1, 1) < jnp.broadcast_to(
+            jnp.arange(decodes.shape[1]), decodes.shape
+        )
+
+        predicted_tokens = decodes * output_mask
+        expected_tokens = batch["labels"] * output_mask
+
+        return predicted_tokens, expected_tokens, (predicted_tokens == 2).sum()
+
     print("starting train loop")
 
     steps = 0
@@ -364,8 +446,21 @@ def main(**kwargs: bool | str | int) -> None:
                 total_tokens += batch_tokens
             metrics["val/mean_per_token_loss"] = (total_loss / total_tokens).item()
 
-            metrics["val/bleu"], metrics["val/completed_sequences"] = calc_bleu(
-                state, padded_val_dataset, tokenizer, autoregressive_inference_step
+            (
+                metrics["val/greedy_bleu"],
+                metrics["val/greedy_completed_sequences"],
+            ) = calc_bleu(
+                state,
+                padded_val_dataset,
+                tokenizer,
+                greedy_autoregressive_inference_step,
+            )
+
+            (
+                metrics["val/4_beam_bleu"],
+                metrics["val/4_beam_completed_sequences"],
+            ) = calc_bleu(
+                state, padded_val_dataset, tokenizer, beam_autoregressive_inference_step
             )
 
             early_stop = early_stop.update(metrics["val/mean_per_token_loss"])
