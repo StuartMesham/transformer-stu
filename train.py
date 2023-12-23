@@ -463,7 +463,7 @@ def main(**kwargs: bool | str | int) -> None:
                 state, padded_val_dataset, tokenizer, beam_autoregressive_inference_step
             )
 
-            early_stop = early_stop.update(metrics["val/mean_per_token_loss"])
+            early_stop = early_stop.update(metrics["val/4_beam_bleu"])
 
             if (epoch + 1) % config.save_every == 0:
                 ckpt = state.params
