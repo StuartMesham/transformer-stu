@@ -8,3 +8,4 @@ pytest
 tqdm
 pre-commit
 pytype
+sacrebleu

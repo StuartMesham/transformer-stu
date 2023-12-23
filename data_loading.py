@@ -75,6 +75,7 @@ def _convert_to_prefix_lm_example(
     masked_input = tf.squeeze(masked_input.to_tensor(), axis=[0])
 
     return {
+        "decoding_start_index": tf.size(input),
         "token_ids": tf.concat((masked_input, target[:-1]), axis=0),
         "labels": tf.concat((input[:-1], target), axis=0),
         "bidirectional_attention_mask": tf.concat(
